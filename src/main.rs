@@ -11,6 +11,8 @@ mod response;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    tracing_subscriber::fmt::init();
+
     let config = TcpConfig::default();
     let server = RESP3Server::new();
     let tcp = TcpServer::new(config, server);

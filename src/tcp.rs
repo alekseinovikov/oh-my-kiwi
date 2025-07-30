@@ -1,11 +1,11 @@
+use crate::command::CommandProcessor;
 use crate::config::TcpConfig;
 use crate::server::Server;
 use std::sync::Arc;
 use tokio::io::AsyncReadExt;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Mutex;
-use tracing::info;
-use crate::command::parse_user_command;
+use tracing::{error, info};
 
 pub(crate) struct TcpServer<S: Server + Send> {
     tcp_config: TcpConfig,
@@ -31,7 +31,7 @@ impl<S: Server + Send + 'static> TcpServer<S> {
             let server = self.server.clone();
             tokio::spawn(async move {
                 if let Err(e) = handle_client(stream, server).await {
-                    eprintln!("Error with {}: {:?}", addr, e);
+                    error!("Error with {}: {:?}", addr, e);
                 }
             });
         }
@@ -42,7 +42,6 @@ async fn handle_client<S: Server + Send>(
     mut stream: TcpStream,
     server: Arc<Mutex<S>>,
 ) -> anyhow::Result<()> {
-    let command = parse_user_command(stream).await?;
-
-    Ok(())
+    let mut command_processor = CommandProcessor::new(stream);
+    command_processor.run().await
 }

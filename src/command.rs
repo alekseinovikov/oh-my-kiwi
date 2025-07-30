@@ -1,7 +1,9 @@
 use crate::types::Types;
+use std::sync::Arc;
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpStream;
-use tracing::error;
+use tokio::sync::Mutex;
+use tracing::info;
 
 pub(crate) enum Command {
     None,
@@ -10,31 +12,34 @@ pub(crate) enum Command {
 }
 
 pub(crate) struct CommandProcessor {
+    stream: Arc<Mutex<TcpStream>>,
     reader: BufferedReader,
 }
 
 impl CommandProcessor {
     pub(crate) fn new(stream: TcpStream) -> Self {
-        Self {
-            reader: BufferedReader::new(stream),
+        let stream = Arc::new(Mutex::new(stream));
+        let reader = BufferedReader::new(stream.clone());
+        Self { stream, reader }
+    }
+
+    pub(crate) async fn run(&mut self) -> anyhow::Result<()> {
+        loop {
+            let token = self.reader.get_next_token().await;
+            let s: &str = std::str::from_utf8(&token).unwrap();
+            info!("{:?}", s);
         }
     }
 }
 
-pub(crate) async fn parse_user_command(mut reader: TcpStream) -> anyhow::Result<Command> {
-    let reader = BufferedReader::new(reader);
-
-    Ok(Command::None)
-}
-
 struct BufferedReader {
-    reader: TcpStream,
+    reader: Arc<Mutex<TcpStream>>,
     buffer: Vec<u8>,
     pointer: usize,
 }
 
 impl BufferedReader {
-    fn new(reader: TcpStream) -> Self {
+    fn new(reader: Arc<Mutex<TcpStream>>) -> Self {
         Self {
             reader,
             buffer: Vec::with_capacity(1024 * 1024),
@@ -42,50 +47,49 @@ impl BufferedReader {
         }
     }
 
-    fn read_next(&mut self, n: usize) -> Option<Vec<u8>> {
-        self.try_to_read_next();
-        if self.get_buffer_tail_size() < n {
-            return None;
-        }
+    async fn get_next_token(&mut self) -> Vec<u8> {
+        loop {
+            if self.buffer.is_empty() || self.pointer >= self.buffer.len() - 1 {
+                let mut buf = [0u8; 256];
+                let mut n: std::io::Result<usize> = Ok(0);
+                {
+                    // lock for a short time
+                    let mut reader = self.reader.lock().await;
+                    n = reader.read(&mut buf).await;
+                }
 
-        let result = self.buffer.as_slice()[self.pointer..self.pointer + n].to_vec();
-        self.pointer += n;
-        Some(result)
-    }
-
-    async fn try_to_read_next(&mut self) {
-        self.read_to_buffer_available(false).await;
-    }
-
-    async fn reset_and_await_data(&mut self) {
-        self.try_to_read_next().await;
-        self.pointer = 0;
-        self.buffer.clear();
-        self.read_to_buffer_available(true).await;
-    }
-
-    async fn read_to_buffer_available(&mut self, blocking: bool) {
-        let mut buf = [0u8; 256];
-        let n = if blocking {
-            self.reader.read(&mut buf).await
-        } else {
-            self.reader.try_read(&mut buf)
-        };
-
-        match n {
-            Ok(size) => {
-                if size > 0 {
-                    self.buffer.extend_from_slice(&buf[..size]);
+                match n {
+                    Ok(read_size) => {
+                        self.buffer.extend_from_slice(&buf[..read_size]);
+                    }
+                    Err(err) => panic!("${err:?}"),
                 }
             }
-            Err(err) => {
-                error!("Failed to read from socket: {}", err);
-                self.buffer.clear();
+
+            if let Some(token) = self.read_token_from_buffer() {
+                return token;
+            }
+
+            if self.buffer.len() >= 1024 * 1024 {
+                panic!("The command is too long.");
             }
         }
     }
 
-    fn get_buffer_tail_size(&self) -> usize {
-        self.buffer.len() - self.pointer
+    fn read_token_from_buffer(&mut self) -> Option<Vec<u8>> {
+        let mut second_pointer = self.pointer + 1;
+        while second_pointer < self.buffer.len() {
+            if self.buffer[self.pointer] == b'\r' && self.buffer[second_pointer] == b'\n' {
+                let token = self.buffer[0..self.pointer].to_vec();
+                self.pointer = 0;
+                self.buffer = self.buffer.split_off(second_pointer + 1);
+                return Some(token);
+            }
+
+            self.pointer += 1;
+            second_pointer += 1;
+        }
+
+        None
     }
 }
