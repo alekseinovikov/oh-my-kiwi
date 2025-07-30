@@ -43,6 +43,6 @@ async fn handle_client<S: Server + Send>(
     server: Arc<Mutex<S>>,
 ) -> anyhow::Result<()> {
     let command = parse_user_command(stream).await?;
-   
+
     Ok(())
 }
