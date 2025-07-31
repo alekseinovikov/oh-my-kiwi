@@ -1,3 +1,4 @@
+use crate::reader::{BufferedReader, Token};
 use crate::types::Types;
 use std::sync::Arc;
 use tokio::io::AsyncReadExt;
@@ -5,18 +6,20 @@ use tokio::net::TcpStream;
 use tokio::sync::Mutex;
 use tracing::info;
 
+#[derive(Debug)]
 pub(crate) enum Command {
     None,
     Ping,
+    Command(String),
     Set { key: Types, value: Types },
 }
 
-pub(crate) struct CommandProcessor {
+pub(crate) struct CommandParser {
     stream: Arc<Mutex<TcpStream>>,
     reader: BufferedReader,
 }
 
-impl CommandProcessor {
+impl CommandParser {
     pub(crate) fn new(stream: TcpStream) -> Self {
         let stream = Arc::new(Mutex::new(stream));
         let reader = BufferedReader::new(stream.clone());
@@ -25,71 +28,83 @@ impl CommandProcessor {
 
     pub(crate) async fn run(&mut self) -> anyhow::Result<()> {
         loop {
-            let token = self.reader.get_next_token().await;
-            let s: &str = std::str::from_utf8(&token).unwrap();
-            info!("{:?}", s);
-        }
-    }
-}
-
-struct BufferedReader {
-    reader: Arc<Mutex<TcpStream>>,
-    buffer: Vec<u8>,
-    pointer: usize,
-}
-
-impl BufferedReader {
-    fn new(reader: Arc<Mutex<TcpStream>>) -> Self {
-        Self {
-            reader,
-            buffer: Vec::with_capacity(1024 * 1024),
-            pointer: 0,
-        }
-    }
-
-    async fn get_next_token(&mut self) -> Vec<u8> {
-        loop {
-            if self.buffer.is_empty() || self.pointer >= self.buffer.len() - 1 {
-                let mut buf = [0u8; 256];
-                let mut n: std::io::Result<usize> = Ok(0);
-                {
-                    // lock for a short time
-                    let mut reader = self.reader.lock().await;
-                    n = reader.read(&mut buf).await;
-                }
-
-                match n {
-                    Ok(read_size) => {
-                        self.buffer.extend_from_slice(&buf[..read_size]);
-                    }
-                    Err(err) => panic!("${err:?}"),
-                }
-            }
-
-            if let Some(token) = self.read_token_from_buffer() {
-                return token;
-            }
-
-            if self.buffer.len() >= 1024 * 1024 {
-                panic!("The command is too long.");
+            let tokens = self.read_command_tokens().await?;
+            if let Ok(command) = Self::parse_command_from_tokens(tokens) {
+                info!("{:?}", command);
             }
         }
     }
 
-    fn read_token_from_buffer(&mut self) -> Option<Vec<u8>> {
-        let mut second_pointer = self.pointer + 1;
-        while second_pointer < self.buffer.len() {
-            if self.buffer[self.pointer] == b'\r' && self.buffer[second_pointer] == b'\n' {
-                let token = self.buffer[0..self.pointer].to_vec();
-                self.pointer = 0;
-                self.buffer = self.buffer.split_off(second_pointer + 1);
-                return Some(token);
-            }
-
-            self.pointer += 1;
-            second_pointer += 1;
+    async fn read_command_tokens(&mut self) -> anyhow::Result<Vec<Token>> {
+        let mut array_def = self.reader.get_next_token().await;
+        if array_def[0] != b'*' {
+            return Err(anyhow::anyhow!("Invalid command"));
         }
 
-        None
+        let array_size = array_def.split_off(1);
+        let array_size = std::str::from_utf8(&array_size)?;
+        let array_size: usize = array_size.parse()?;
+        let mut tokens: Vec<Token> = Vec::with_capacity(array_size);
+        for _ in 0..array_size {
+            let new_token = self.read_next_command_token().await?;
+            tokens.push(new_token);
+        }
+
+        Ok(tokens)
+    }
+
+    async fn read_next_command_token(&mut self) -> anyhow::Result<Token> {
+        let token_def = self.reader.get_next_token().await;
+        let token_type = token_def[0];
+        match token_type {
+            b'$' => self.read_next_string(token_def).await,
+            _ => Err(anyhow::anyhow!("Invalid command")),
+        }
+    }
+
+    async fn read_next_string(&mut self, mut string_def: Vec<u8>) -> anyhow::Result<Token> {
+        let string_size = string_def.split_off(1);
+        let string_size = std::str::from_utf8(&string_size)?;
+        let string_size: usize = string_size.parse()?;
+
+        let next_token = self.reader.get_next_token().await;
+        if next_token.len() != string_size {
+            return Err(anyhow::anyhow!("String doesn't match the size"));
+        }
+
+        let string = std::str::from_utf8(&next_token)?;
+        Ok(Token::String(string.to_string()))
+    }
+
+    fn parse_command_from_tokens(mut tokens: Vec<Token>) -> anyhow::Result<Command> {
+        if tokens.is_empty() {
+            return Err(anyhow::anyhow!("Invalid command"));
+        }
+
+        let args = tokens.split_off(1);
+        let command_token = &tokens[0];
+        match command_token {
+            Token::String(name) => Self::parse_command(name.to_uppercase(), args),
+            _ => Err(anyhow::anyhow!("Invalid command")),
+        }
+    }
+
+    fn parse_command(name: String, args: Vec<Token>) -> anyhow::Result<Command> {
+        match name.as_str() {
+            "PING" => Ok(Command::Ping),
+            "COMMAND" => Self::build_command_command(args),
+            _ => Err(anyhow::anyhow!("Invalid command")),
+        }
+    }
+
+    fn build_command_command(args: Vec<Token>) -> anyhow::Result<Command> {
+        if args.is_empty() || args.len() > 1 {
+            Err(anyhow::anyhow!("Invalid command"))
+        } else {
+            match &args[0] {
+                Token::String(arg) => Ok(Command::Command(arg.to_string())),
+                _ => Err(anyhow::anyhow!("Invalid command")),
+            }
+        }
     }
 }

@@ -1,4 +1,4 @@
-use crate::command::CommandProcessor;
+use crate::command::CommandParser;
 use crate::config::TcpConfig;
 use crate::server::Server;
 use std::sync::Arc;
@@ -42,6 +42,6 @@ async fn handle_client<S: Server + Send>(
     mut stream: TcpStream,
     server: Arc<Mutex<S>>,
 ) -> anyhow::Result<()> {
-    let mut command_processor = CommandProcessor::new(stream);
+    let mut command_processor = CommandParser::new(stream);
     command_processor.run().await
 }

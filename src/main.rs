@@ -8,6 +8,7 @@ mod tcp;
 mod command;
 mod types;
 mod response;
+mod reader;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
