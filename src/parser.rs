@@ -1,10 +1,6 @@
 use crate::reader::{BufferedReader, Token};
 use crate::types::Types;
-use std::sync::Arc;
-use tokio::io::AsyncReadExt;
 use tokio::net::TcpStream;
-use tokio::sync::Mutex;
-use tracing::info;
 
 #[derive(Debug)]
 pub(crate) enum Command {
@@ -15,24 +11,18 @@ pub(crate) enum Command {
 }
 
 pub(crate) struct CommandParser {
-    stream: Arc<Mutex<TcpStream>>,
     reader: BufferedReader,
 }
 
 impl CommandParser {
     pub(crate) fn new(stream: TcpStream) -> Self {
-        let stream = Arc::new(Mutex::new(stream));
-        let reader = BufferedReader::new(stream.clone());
-        Self { stream, reader }
+        let reader = BufferedReader::new(stream);
+        Self { reader }
     }
 
-    pub(crate) async fn run(&mut self) -> anyhow::Result<()> {
-        loop {
-            let tokens = self.read_command_tokens().await?;
-            if let Ok(command) = Self::parse_command_from_tokens(tokens) {
-                info!("{:?}", command);
-            }
-        }
+    pub(crate) async fn parse_next_command(&mut self) -> anyhow::Result<Command> {
+        let tokens = self.read_command_tokens().await?;
+        Self::parse_command_from_tokens(tokens)
     }
 
     async fn read_command_tokens(&mut self) -> anyhow::Result<Vec<Token>> {

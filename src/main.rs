@@ -1,21 +1,20 @@
 use crate::config::TcpConfig;
-use crate::server::RESP3Server;
 use crate::tcp::TcpServer;
 
 mod config;
+mod parser;
+mod processor;
+mod reader;
 mod server;
 mod tcp;
-mod command;
 mod types;
-mod response;
-mod reader;
+mod writer;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
 
     let config = TcpConfig::default();
-    let server = RESP3Server::new();
-    let tcp = TcpServer::new(config, server);
+    let tcp = TcpServer::new(config);
     tcp.run().await
 }

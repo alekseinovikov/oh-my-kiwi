@@ -1,23 +1,46 @@
-pub(crate) trait Server {
-    fn process_line(&self, line: &str) -> String;
-}
+use crate::parser::CommandParser;
+use crate::processor::CommandProcessor;
+use crate::writer::ResponseWriter;
+use tracing::error;
 
-#[derive(Debug, Default)]
-pub(crate) struct RESP3Server;
+pub(crate) struct RESP3Server {
+    parser: CommandParser,
+    processor: CommandProcessor,
+    writer: ResponseWriter,
+}
 
 impl RESP3Server {
-    pub(crate) const fn new() -> Self { Self }
+    pub(crate) const fn new(
+        parser: CommandParser,
+        processor: CommandProcessor,
+        writer: ResponseWriter,
+    ) -> Self {
+        Self {
+            parser,
+            processor,
+            writer,
+        }
+    }
 }
 
-impl Server for RESP3Server {
-    fn process_line(&self, line: &str) -> String {
-        let cmd = line.trim_end_matches(|c| c == '\r' || c == '\n');
-        if cmd.eq_ignore_ascii_case("PING") {
-            "PONG\r\n".into()
-        } else if cmd.eq_ignore_ascii_case("QUIT") {
-            "BYE\r\n".into()
-        } else {
-            "UNKNOWN COMMAND\r\n".into()
+impl RESP3Server {
+    pub(crate) async fn run(&mut self) -> anyhow::Result<()> {
+        loop {
+            let command = self.parser.parse_next_command().await;
+            match command {
+                Ok(command) => {
+                    let response = self.processor.process(command).await;
+                    match response {
+                        Ok(response) => self.writer.write(response).await?,
+                        Err(err) => {
+                            error!(?err, "Failed to process command")
+                        }
+                    }
+                }
+                Err(err) => {
+                    error!(?err, "Failed to parse command")
+                }
+            }
         }
     }
 }

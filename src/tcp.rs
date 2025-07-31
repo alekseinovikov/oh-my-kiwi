@@ -1,23 +1,17 @@
-use crate::command::CommandParser;
 use crate::config::TcpConfig;
-use crate::server::Server;
-use std::sync::Arc;
-use tokio::io::AsyncReadExt;
+use crate::parser::CommandParser;
+use crate::processor::CommandProcessor;
+use crate::server::RESP3Server;
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::Mutex;
 use tracing::{error, info};
 
-pub(crate) struct TcpServer<S: Server + Send> {
+pub(crate) struct TcpServer {
     tcp_config: TcpConfig,
-    server: Arc<Mutex<S>>,
 }
 
-impl<S: Server + Send + 'static> TcpServer<S> {
-    pub(crate) fn new(tcp_config: TcpConfig, server: S) -> TcpServer<S> {
-        Self {
-            tcp_config,
-            server: Arc::new(Mutex::new(server)),
-        }
+impl TcpServer {
+    pub(crate) fn new(tcp_config: TcpConfig) -> TcpServer {
+        Self { tcp_config }
     }
 
     pub(crate) async fn run(&self) -> anyhow::Result<()> {
@@ -25,23 +19,21 @@ impl<S: Server + Send + 'static> TcpServer<S> {
         let listener = TcpListener::bind(socket_addr).await?;
 
         loop {
-            let (mut stream, addr) = listener.accept().await?;
+            let (stream, addr) = listener.accept().await?;
             info!("New connection from: ${addr}");
 
-            let server = self.server.clone();
             tokio::spawn(async move {
-                if let Err(e) = handle_client(stream, server).await {
+                if let Err(e) = Self::handle_client(stream).await {
                     error!("Error with {}: {:?}", addr, e);
                 }
             });
         }
     }
-}
 
-async fn handle_client<S: Server + Send>(
-    mut stream: TcpStream,
-    server: Arc<Mutex<S>>,
-) -> anyhow::Result<()> {
-    let mut command_processor = CommandParser::new(stream);
-    command_processor.run().await
+    async fn handle_client(stream: TcpStream) -> anyhow::Result<()> {
+        let parser = CommandParser::new(stream);
+        let processor = CommandProcessor::new();
+        let mut server = RESP3Server::new(parser, processor);
+        server.run().await
+    }
 }
