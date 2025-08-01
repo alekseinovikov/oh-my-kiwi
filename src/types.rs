@@ -1,3 +1,5 @@
+use crate::reader::BytesReader;
+use anyhow::anyhow;
 use num_bigint::BigInt;
 use ordered_float::OrderedFloat;
 use std::collections::BTreeMap;
@@ -35,8 +37,129 @@ impl Types {
             Types::Set(set) => set_to_bytes(set),
         }
     }
-}
 
+    pub(crate) async fn from_stream<R: BytesReader + Send>(reader: &mut R) -> anyhow::Result<Self> {
+        let line = reader.read_line().await?;
+        let type_prefix = line[0];
+        let rest_of_line = &line[1..];
+
+        match type_prefix {
+            b'+' => Ok(Types::SimpleString(String::from_utf8(
+                rest_of_line.to_vec(),
+            )?)),
+
+            b'-' => Ok(Types::SimpleError(String::from_utf8(
+                rest_of_line.to_vec(),
+            )?)),
+
+            b':' => {
+                let s = std::str::from_utf8(rest_of_line)?;
+                Ok(Types::Integer(s.parse::<i64>()?))
+            }
+
+            b'_' => Ok(Types::Null),
+
+            b'#' => {
+                if rest_of_line.is_empty() {
+                    return Err(anyhow!("Invalid boolean format"));
+                }
+                match rest_of_line[0] {
+                    b't' => Ok(Types::Boolean(true)),
+                    b'f' => Ok(Types::Boolean(false)),
+                    _ => Err(anyhow!("Invalid boolean value")),
+                }
+            }
+
+            b',' => {
+                let s = std::str::from_utf8(rest_of_line)?;
+                let val = match s {
+                    "inf" => f64::INFINITY,
+                    "-inf" => f64::NEG_INFINITY,
+                    "nan" => f64::NAN,
+                    _ => s.parse::<f64>()?,
+                };
+                Ok(Types::Double(OrderedFloat(val)))
+            }
+
+            b'(' => {
+                let s = std::str::from_utf8(rest_of_line)?;
+                Ok(Types::BigNumber(
+                    BigInt::parse_bytes(s.as_bytes(), 10)
+                        .ok_or(anyhow!("Failed to parse BigInt"))?,
+                ))
+            }
+
+            b'$' => {
+                let len_str = std::str::from_utf8(rest_of_line)?;
+                let len = len_str.parse::<isize>()?;
+
+                if len == -1 {
+                    return Ok(Types::Null); // Null Bulk String
+                }
+
+                let data_with_crlf = reader.read_bytes(len as usize + 2).await?;
+                if &data_with_crlf[len as usize..] != CRLF {
+                    return Err(anyhow!("Bulk string missing trailing CRLF"));
+                }
+                Ok(Types::BulkString(String::from_utf8(
+                    data_with_crlf[..len as usize].to_vec(),
+                )?))
+            }
+
+            b'!' => {
+                let len_str = std::str::from_utf8(rest_of_line)?;
+                let len = len_str.parse::<usize>()?;
+
+                let data_with_crlf = reader.read_bytes(len + 2).await?;
+                if &data_with_crlf[len..] != CRLF {
+                    return Err(anyhow!("Bulk error missing trailing CRLF"));
+                }
+                Ok(Types::BulkError(String::from_utf8(
+                    data_with_crlf[..len].to_vec(),
+                )?))
+            }
+
+            b'*' => {
+                let len_str = std::str::from_utf8(rest_of_line)?;
+                let len = len_str.parse::<usize>()?;
+                let mut arr = Vec::with_capacity(len);
+                for _ in 0..len {
+                    arr.push(Box::pin(Self::from_stream(reader)).await?);
+                }
+                Ok(Types::Array(arr))
+            }
+
+            b'%' => {
+                let len_str = std::str::from_utf8(rest_of_line)?;
+                let len = len_str.parse::<usize>()?;
+                let mut map = BTreeMap::new();
+                for _ in 0..len {
+                    // ИЗМЕНЕНИЯ ЗДЕСЬ
+                    let key = Box::pin(Self::from_stream(reader)).await?;
+                    let value = Box::pin(Self::from_stream(reader)).await?;
+                    map.insert(key, value);
+                }
+                Ok(Types::Map(map))
+            }
+
+            b'~' => {
+                let len_str = std::str::from_utf8(rest_of_line)?;
+                let len = len_str.parse::<usize>()?;
+                let mut set = Vec::with_capacity(len);
+                for _ in 0..len {
+                    // ИЗМЕНЕНИЕ ЗДЕСЬ
+                    set.push(Box::pin(Self::from_stream(reader)).await?);
+                }
+                Ok(Types::Set(set))
+            }
+
+            _ => Err(anyhow!(
+                "Unknown or unsupported RESP type prefix: {}",
+                type_prefix as char
+            )),
+        }
+    }
+}
 const CRLF: &[u8] = b"\r\n";
 const CRLF_LEN: usize = 2;
 
@@ -190,6 +313,7 @@ fn set_to_bytes(set: &Vec<Types>) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use async_trait::async_trait;
     use num_bigint::BigInt;
     use std::collections::BTreeMap;
 
@@ -246,8 +370,8 @@ mod tests {
 
     #[test]
     fn test_double() {
-        let val = Types::Double(OrderedFloat::from(3.14159));
-        assert_eq!(val.to_bytes(), b",3.14159\r\n");
+        let val = Types::Double(OrderedFloat::from(23.4554));
+        assert_eq!(val.to_bytes(), b",23.4554\r\n");
     }
 
     #[test]
@@ -302,5 +426,215 @@ mod tests {
     fn test_null_in_array() {
         let val = Types::Array(vec![Types::Null, Types::SimpleString("value".to_string())]);
         assert_eq!(val.to_bytes(), b"*2\r\n_\r\n+value\r\n");
+    }
+
+    struct MockReader<'a> {
+        data: &'a [u8],
+        pos: usize,
+    }
+
+    impl<'a> MockReader<'a> {
+        fn new(data: &'a [u8]) -> Self {
+            Self { data, pos: 0 }
+        }
+    }
+
+    #[async_trait]
+    impl<'a> BytesReader for MockReader<'a> {
+        async fn read_line(&mut self) -> anyhow::Result<Vec<u8>> {
+            if self.pos >= self.data.len() {
+                return Err(anyhow!("MockReader: No more data to read"));
+            }
+            // Ищем \r\n в оставшейся части данных
+            if let Some(i) = self.data[self.pos..].windows(2).position(|w| w == b"\r\n") {
+                let line_end = self.pos + i;
+                let line = self.data[self.pos..line_end].to_vec();
+                self.pos = line_end + 2; // Перемещаем указатель за \r\n
+                Ok(line)
+            } else {
+                Err(anyhow!("MockReader: No CRLF found"))
+            }
+        }
+
+        async fn read_bytes(&mut self, n: usize) -> anyhow::Result<Vec<u8>> {
+            let bytes_end = self.pos + n;
+            if bytes_end > self.data.len() {
+                return Err(anyhow!("MockReader: Not enough bytes to read"));
+            }
+            let bytes = self.data[self.pos..bytes_end].to_vec();
+            self.pos = bytes_end;
+            Ok(bytes)
+        }
+    }
+
+    #[tokio::test]
+    async fn test_parse_simple_string() {
+        let input = b"+OK\r\n";
+        let mut reader = MockReader::new(input);
+        let result = Types::from_stream(&mut reader).await.unwrap();
+        assert_eq!(result, Types::SimpleString("OK".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_parse_simple_error() {
+        let input = b"-Error message\r\n";
+        let mut reader = MockReader::new(input);
+        let result = Types::from_stream(&mut reader).await.unwrap();
+        assert_eq!(result, Types::SimpleError("Error message".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_parse_integer() {
+        let input = b":12345\r\n";
+        let mut reader = MockReader::new(input);
+        let result = Types::from_stream(&mut reader).await.unwrap();
+        assert_eq!(result, Types::Integer(12345));
+    }
+
+    #[tokio::test]
+    async fn test_parse_bulk_string() {
+        let input = b"$6\r\nfoobar\r\n";
+        let mut reader = MockReader::new(input);
+        let result = Types::from_stream(&mut reader).await.unwrap();
+        assert_eq!(result, Types::BulkString("foobar".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_parse_empty_bulk_string() {
+        let input = b"$0\r\n\r\n";
+        let mut reader = MockReader::new(input);
+        let result = Types::from_stream(&mut reader).await.unwrap();
+        assert_eq!(result, Types::BulkString("".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_parse_null_bulk_string() {
+        let input = b"$-1\r\n";
+        let mut reader = MockReader::new(input);
+        let result = Types::from_stream(&mut reader).await.unwrap();
+        assert_eq!(result, Types::Null);
+    }
+
+    #[tokio::test]
+    async fn test_parse_null() {
+        let input = b"_\r\n";
+        let mut reader = MockReader::new(input);
+        let result = Types::from_stream(&mut reader).await.unwrap();
+        assert_eq!(result, Types::Null);
+    }
+
+    #[tokio::test]
+    async fn test_parse_boolean() {
+        let input_true = b"#t\r\n";
+        let mut reader_true = MockReader::new(input_true);
+        let result_true = Types::from_stream(&mut reader_true).await.unwrap();
+        assert_eq!(result_true, Types::Boolean(true));
+
+        let input_false = b"#f\r\n";
+        let mut reader_false = MockReader::new(input_false);
+        let result_false = Types::from_stream(&mut reader_false).await.unwrap();
+        assert_eq!(result_false, Types::Boolean(false));
+    }
+
+    #[tokio::test]
+    async fn test_parse_double() {
+        let input = b",1.234\r\n";
+        let mut reader = MockReader::new(input);
+        let result = Types::from_stream(&mut reader).await.unwrap();
+        assert_eq!(result, Types::Double(OrderedFloat(1.234)));
+    }
+
+    #[tokio::test]
+    async fn test_parse_double_inf() {
+        let input = b",inf\r\n";
+        let mut reader = MockReader::new(input);
+        let result = Types::from_stream(&mut reader).await.unwrap();
+        assert_eq!(result, Types::Double(OrderedFloat(f64::INFINITY)));
+    }
+
+    #[tokio::test]
+    async fn test_parse_big_number() {
+        let input = b"(12345678901234567890\r\n";
+        let mut reader = MockReader::new(input);
+        let result = Types::from_stream(&mut reader).await.unwrap();
+        let expected = BigInt::parse_bytes(b"12345678901234567890", 10).unwrap();
+        assert_eq!(result, Types::BigNumber(expected));
+    }
+
+    #[tokio::test]
+    async fn test_parse_bulk_error() {
+        let input = b"!13\r\nError message\r\n";
+        let mut reader = MockReader::new(input);
+        let result = Types::from_stream(&mut reader).await.unwrap();
+        assert_eq!(result, Types::BulkError("Error message".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_parse_array() {
+        let input = b"*2\r\n$3\r\nfoo\r\n:42\r\n";
+        let mut reader = MockReader::new(input);
+        let result = Types::from_stream(&mut reader).await.unwrap();
+        let expected = Types::Array(vec![
+            Types::BulkString("foo".to_string()),
+            Types::Integer(42),
+        ]);
+        assert_eq!(result, expected);
+    }
+
+    #[tokio::test]
+    async fn test_parse_empty_array() {
+        let input = b"*0\r\n";
+        let mut reader = MockReader::new(input);
+        let result = Types::from_stream(&mut reader).await.unwrap();
+        assert_eq!(result, Types::Array(vec![]));
+    }
+
+    #[tokio::test]
+    async fn test_parse_nested_array() {
+        let input = b"*2\r\n:1\r\n*2\r\n+two\r\n+three\r\n";
+        let mut reader = MockReader::new(input);
+        let result = Types::from_stream(&mut reader).await.unwrap();
+        let expected = Types::Array(vec![
+            Types::Integer(1),
+            Types::Array(vec![
+                Types::SimpleString("two".to_string()),
+                Types::SimpleString("three".to_string()),
+            ]),
+        ]);
+        assert_eq!(result, expected);
+    }
+
+    #[tokio::test]
+    async fn test_parse_map() {
+        let input = b"%2\r\n+key1\r\n:1\r\n+key2\r\n:2\r\n";
+        let mut reader = MockReader::new(input);
+        let result = Types::from_stream(&mut reader).await.unwrap();
+
+        let mut expected_map = BTreeMap::new();
+        expected_map.insert(Types::SimpleString("key1".to_string()), Types::Integer(1));
+        expected_map.insert(Types::SimpleString("key2".to_string()), Types::Integer(2));
+
+        assert_eq!(result, Types::Map(expected_map));
+    }
+
+    #[tokio::test]
+    async fn test_parse_empty_map() {
+        let input = b"%0\r\n";
+        let mut reader = MockReader::new(input);
+        let result = Types::from_stream(&mut reader).await.unwrap();
+        assert_eq!(result, Types::Map(BTreeMap::new()));
+    }
+
+    #[tokio::test]
+    async fn test_parse_set() {
+        let input = b"~3\r\n+one\r\n:2\r\n#t\r\n";
+        let mut reader = MockReader::new(input);
+        let result = Types::from_stream(&mut reader).await.unwrap();
+        let expected = Types::Set(vec![
+            Types::SimpleString("one".to_string()),
+            Types::Integer(2),
+            Types::Boolean(true),
+        ]);
+        assert_eq!(result, expected);
     }
 }

@@ -1,73 +1,61 @@
-use std::rc::Rc;
+// Поместите это в ваш файл с ридером
+use anyhow::anyhow;
 use std::sync::Arc;
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpStream;
 use tokio::sync::Mutex;
 
-#[derive(Debug)]
-pub(crate) enum Token {
-    String(String),
-    Null,
-    Boolean(bool),
+#[async_trait::async_trait]
+pub(crate) trait BytesReader {
+    async fn read_line(&mut self) -> anyhow::Result<Vec<u8>>;
+    async fn read_bytes(&mut self, n: usize) -> anyhow::Result<Vec<u8>>;
 }
 
 pub(crate) struct BufferedReader {
     reader: Arc<Mutex<TcpStream>>,
     buffer: Vec<u8>,
-    pointer: usize,
 }
 
 impl BufferedReader {
     pub(crate) fn new(reader: Arc<Mutex<TcpStream>>) -> Self {
         Self {
             reader,
-            buffer: Vec::with_capacity(1024 * 1024),
-            pointer: 0,
+            buffer: Vec::with_capacity(1024 * 1024), // 1MB buffer
         }
     }
 
-    pub(crate) async fn get_next_token(&mut self) -> Vec<u8> {
+    async fn ensure_buffer(&mut self, size: usize) -> anyhow::Result<()> {
+        while self.buffer.len() < size {
+            let mut buf = [0u8; 1024];
+            let mut reader_lock = self.reader.lock().await;
+            let n = reader_lock.read(&mut buf).await?;
+            if n == 0 {
+                return Err(anyhow!("Connection closed by peer"));
+            }
+            self.buffer.extend_from_slice(&buf[..n]);
+        }
+        Ok(())
+    }
+}
+
+#[async_trait::async_trait]
+impl BytesReader for BufferedReader {
+    async fn read_line(&mut self) -> anyhow::Result<Vec<u8>> {
         loop {
-            if self.buffer.is_empty() || self.pointer >= self.buffer.len() - 1 {
-                let mut buf = [0u8; 256];
-                let n: std::io::Result<usize> = {
-                    // lock for a short time
-                    let mut reader = self.reader.lock().await;
-                    reader.read(&mut buf).await
-                };
-
-                match n {
-                    Ok(read_size) => {
-                        self.buffer.extend_from_slice(&buf[..read_size]);
-                    }
-                    Err(err) => panic!("${err:?}"),
-                }
+            if let Some(pos) = self.buffer.windows(2).position(|w| w == b"\r\n") {
+                let line = self.buffer[..pos].to_vec();
+                self.buffer.drain(..pos + 2); // Удаляем строку и \r\n
+                return Ok(line);
             }
 
-            if let Some(token) = self.read_token_from_buffer() {
-                return token;
-            }
-
-            if self.buffer.len() >= 1024 * 1024 {
-                panic!("The command is too long.");
-            }
+            self.ensure_buffer(self.buffer.len() + 256).await?;
         }
     }
 
-    fn read_token_from_buffer(&mut self) -> Option<Vec<u8>> {
-        let mut second_pointer = self.pointer + 1;
-        while second_pointer < self.buffer.len() {
-            if self.buffer[self.pointer] == b'\r' && self.buffer[second_pointer] == b'\n' {
-                let token = self.buffer[0..self.pointer].to_vec();
-                self.pointer = 0;
-                self.buffer = self.buffer.split_off(second_pointer + 1);
-                return Some(token);
-            }
-
-            self.pointer += 1;
-            second_pointer += 1;
-        }
-
-        None
+    async fn read_bytes(&mut self, n: usize) -> anyhow::Result<Vec<u8>> {
+        self.ensure_buffer(n).await?;
+        let bytes = self.buffer[..n].to_vec();
+        self.buffer.drain(..n);
+        Ok(bytes)
     }
 }
