@@ -2,7 +2,10 @@ use crate::config::TcpConfig;
 use crate::parser::CommandParser;
 use crate::processor::CommandProcessor;
 use crate::server::RESP3Server;
+use crate::writer::ResponseWriter;
+use std::sync::Arc;
 use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::Mutex;
 use tracing::{error, info};
 
 pub(crate) struct TcpServer {
@@ -31,9 +34,13 @@ impl TcpServer {
     }
 
     async fn handle_client(stream: TcpStream) -> anyhow::Result<()> {
-        let parser = CommandParser::new(stream);
         let processor = CommandProcessor::new();
-        let mut server = RESP3Server::new(parser, processor);
+        let stream = Arc::new(Mutex::new(stream));
+
+        let parser = CommandParser::new(stream.clone());
+        let writer = ResponseWriter::new(stream.clone());
+
+        let mut server = RESP3Server::new(parser, processor, writer);
         server.run().await
     }
 }

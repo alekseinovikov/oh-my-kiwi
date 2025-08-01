@@ -18,8 +18,8 @@ impl CommandProcessor {
         match command {
             Command::None => Ok(Response::Ok),
             Command::Ping => Ok(Response::Pong),
-            Command::Command(arg) => {}
-            Command::Set { key, value } => {}
+            Command::Command(arg) => Ok(Response::Ok),
+            Command::Set { key, value } => Ok(Response::Ok),
         }
     }
 }

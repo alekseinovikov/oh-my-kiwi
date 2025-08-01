@@ -1,6 +1,9 @@
 use crate::reader::{BufferedReader, Token};
 use crate::types::Types;
+use std::rc::Rc;
+use std::sync::Arc;
 use tokio::net::TcpStream;
+use tokio::sync::Mutex;
 
 #[derive(Debug)]
 pub(crate) enum Command {
@@ -15,7 +18,7 @@ pub(crate) struct CommandParser {
 }
 
 impl CommandParser {
-    pub(crate) fn new(stream: TcpStream) -> Self {
+    pub(crate) fn new(stream: Arc<Mutex<TcpStream>>) -> Self {
         let reader = BufferedReader::new(stream);
         Self { reader }
     }

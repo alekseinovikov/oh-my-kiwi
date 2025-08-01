@@ -1,5 +1,8 @@
+use std::rc::Rc;
+use std::sync::Arc;
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpStream;
+use tokio::sync::Mutex;
 
 #[derive(Debug)]
 pub(crate) enum Token {
@@ -9,13 +12,13 @@ pub(crate) enum Token {
 }
 
 pub(crate) struct BufferedReader {
-    reader: TcpStream,
+    reader: Arc<Mutex<TcpStream>>,
     buffer: Vec<u8>,
     pointer: usize,
 }
 
 impl BufferedReader {
-    pub(crate) fn new(reader: TcpStream) -> Self {
+    pub(crate) fn new(reader: Arc<Mutex<TcpStream>>) -> Self {
         Self {
             reader,
             buffer: Vec::with_capacity(1024 * 1024),
@@ -27,7 +30,12 @@ impl BufferedReader {
         loop {
             if self.buffer.is_empty() || self.pointer >= self.buffer.len() - 1 {
                 let mut buf = [0u8; 256];
-                let n: std::io::Result<usize> = self.reader.read(&mut buf).await;
+                let n: std::io::Result<usize> = {
+                    // lock for a short time
+                    let mut reader = self.reader.lock().await;
+                    reader.read(&mut buf).await
+                };
+
                 match n {
                     Ok(read_size) => {
                         self.buffer.extend_from_slice(&buf[..read_size]);
