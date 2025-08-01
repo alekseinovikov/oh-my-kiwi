@@ -1,13 +1,12 @@
-// Поместите это в ваш файл с ридером
-use anyhow::anyhow;
+use crate::error::{KiwiError, ParseError};
 use std::sync::Arc;
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpStream;
 use tokio::sync::Mutex;
 
 pub(crate) trait BytesReader {
-    async fn read_line(&mut self) -> anyhow::Result<Vec<u8>>;
-    async fn read_bytes(&mut self, n: usize) -> anyhow::Result<Vec<u8>>;
+    async fn read_line(&mut self) -> Result<Vec<u8>, ParseError>;
+    async fn read_bytes(&mut self, n: usize) -> Result<Vec<u8>, ParseError>;
 }
 
 pub(crate) struct BufferedReader {
@@ -23,22 +22,27 @@ impl BufferedReader {
         }
     }
 
-    async fn ensure_buffer(&mut self) -> anyhow::Result<()> {
+    async fn ensure_buffer(&mut self) -> Result<(), ParseError> {
         while self.buffer.is_empty() {
             let mut buf = [0u8; 1024];
             let mut reader_lock = self.reader.lock().await;
-            let n = reader_lock.read(&mut buf).await?;
-            if n == 0 {
-                return Err(anyhow!("Connection closed by peer"));
+            let n = reader_lock.read(&mut buf).await;
+            match n {
+                Ok(n) => {
+                    if n == 0 {
+                        return Err(ParseError::ConnectionClosed);
+                    }
+                    self.buffer.extend_from_slice(&buf[..n]);
+                }
+                Err(_) => return Err(ParseError::ConnectionClosed),
             }
-            self.buffer.extend_from_slice(&buf[..n]);
         }
         Ok(())
     }
 }
 
 impl BytesReader for BufferedReader {
-    async fn read_line(&mut self) -> anyhow::Result<Vec<u8>> {
+    async fn read_line(&mut self) -> Result<Vec<u8>, ParseError> {
         loop {
             if let Some(pos) = self.buffer.windows(2).position(|w| w == b"\r\n") {
                 let line = self.buffer[..pos].to_vec();
@@ -50,7 +54,7 @@ impl BytesReader for BufferedReader {
         }
     }
 
-    async fn read_bytes(&mut self, n: usize) -> anyhow::Result<Vec<u8>> {
+    async fn read_bytes(&mut self, n: usize) -> Result<Vec<u8>, ParseError> {
         let mut result = Vec::with_capacity(n);
         while result.len() < n {
             self.ensure_buffer().await?;

@@ -1,3 +1,4 @@
+use crate::error::KiwiError;
 use crate::parser::Command;
 use crate::types::Types;
 
@@ -24,7 +25,7 @@ impl CommandProcessor {
         Self
     }
 
-    pub(crate) async fn process(&self, command: Command) -> anyhow::Result<Response> {
+    pub(crate) async fn process(&self, command: Command) -> Result<Response, KiwiError> {
         match command {
             Command::None => Ok(Response::Ok),
             Command::Ping => Ok(Response::Pong),

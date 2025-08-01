@@ -17,7 +17,7 @@ impl TcpServer {
         Self { tcp_config }
     }
 
-    pub(crate) async fn run(&self) -> anyhow::Result<()> {
+    pub(crate) async fn run(&self) -> std::io::Result<()> {
         let socket_addr = self.tcp_config.socket_addr()?;
         let listener = TcpListener::bind(socket_addr).await?;
 
@@ -33,7 +33,7 @@ impl TcpServer {
         }
     }
 
-    async fn handle_client(stream: TcpStream) -> anyhow::Result<()> {
+    async fn handle_client(stream: TcpStream) -> std::io::Result<()>{
         let processor = CommandProcessor::new();
         let stream = Arc::new(Mutex::new(stream));
 
@@ -41,6 +41,7 @@ impl TcpServer {
         let writer = ResponseWriter::new(stream.clone());
 
         let mut server = RESP3Server::new(parser, processor, writer);
-        server.run().await
+        server.run().await;
+        Ok(())
     }
 }

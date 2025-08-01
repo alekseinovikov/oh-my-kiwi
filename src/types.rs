@@ -1,5 +1,5 @@
+use crate::error::{ParseError};
 use crate::reader::BytesReader;
-use anyhow::anyhow;
 use num_bigint::BigInt;
 use ordered_float::OrderedFloat;
 use std::collections::BTreeMap;
@@ -38,7 +38,9 @@ impl Types {
         }
     }
 
-    pub(crate) async fn from_stream<R: BytesReader + Send>(reader: &mut R) -> anyhow::Result<Self> {
+    pub(crate) async fn from_stream<R: BytesReader + Send>(
+        reader: &mut R,
+    ) -> Result<Self, ParseError> {
         let line = reader.read_line().await?;
         let type_prefix = line[0];
         let rest_of_line = &line[1..];
@@ -53,7 +55,7 @@ impl Types {
             )?)),
 
             b':' => {
-                let s = std::str::from_utf8(rest_of_line)?;
+                let s = String::from_utf8(rest_of_line.to_vec())?;
                 Ok(Types::Integer(s.parse::<i64>()?))
             }
 
@@ -61,18 +63,18 @@ impl Types {
 
             b'#' => {
                 if rest_of_line.is_empty() {
-                    return Err(anyhow!("Invalid boolean format"));
+                    return Err(ParseError::ExpectedBool);
                 }
                 match rest_of_line[0] {
                     b't' => Ok(Types::Boolean(true)),
                     b'f' => Ok(Types::Boolean(false)),
-                    _ => Err(anyhow!("Invalid boolean value")),
+                    _ => Err(ParseError::ExpectedBool),
                 }
             }
 
             b',' => {
-                let s = std::str::from_utf8(rest_of_line)?;
-                let val = match s {
+                let s = String::from_utf8(rest_of_line.to_vec())?;
+                let val = match s.as_str() {
                     "inf" => f64::INFINITY,
                     "-inf" => f64::NEG_INFINITY,
                     "nan" => f64::NAN,
@@ -82,15 +84,15 @@ impl Types {
             }
 
             b'(' => {
-                let s = std::str::from_utf8(rest_of_line)?;
+                let s = String::from_utf8(rest_of_line.to_vec())?;
                 Ok(Types::BigNumber(
                     BigInt::parse_bytes(s.as_bytes(), 10)
-                        .ok_or(anyhow!("Failed to parse BigInt"))?,
+                        .ok_or(ParseError::WrongBigNumberFormat)?,
                 ))
             }
 
             b'$' => {
-                let len_str = std::str::from_utf8(rest_of_line)?;
+                let len_str = String::from_utf8(rest_of_line.to_vec())?;
                 let len = len_str.parse::<isize>()?;
 
                 if len == -1 {
@@ -99,7 +101,7 @@ impl Types {
 
                 let data_with_crlf = reader.read_bytes(len as usize + 2).await?;
                 if &data_with_crlf[len as usize..] != CRLF {
-                    return Err(anyhow!("Bulk string missing trailing CRLF"));
+                    return Err(ParseError::MissingSeparator);
                 }
                 Ok(Types::BulkString(String::from_utf8(
                     data_with_crlf[..len as usize].to_vec(),
@@ -107,12 +109,12 @@ impl Types {
             }
 
             b'!' => {
-                let len_str = std::str::from_utf8(rest_of_line)?;
+                let len_str = String::from_utf8(rest_of_line.to_vec())?;
                 let len = len_str.parse::<usize>()?;
 
                 let data_with_crlf = reader.read_bytes(len + 2).await?;
                 if &data_with_crlf[len..] != CRLF {
-                    return Err(anyhow!("Bulk error missing trailing CRLF"));
+                    return Err(ParseError::MissingSeparator);
                 }
                 Ok(Types::BulkError(String::from_utf8(
                     data_with_crlf[..len].to_vec(),
@@ -120,7 +122,7 @@ impl Types {
             }
 
             b'*' => {
-                let len_str = std::str::from_utf8(rest_of_line)?;
+                let len_str = String::from_utf8(rest_of_line.to_vec())?;
                 let len = len_str.parse::<usize>()?;
                 let mut arr = Vec::with_capacity(len);
                 for _ in 0..len {
@@ -130,7 +132,7 @@ impl Types {
             }
 
             b'%' => {
-                let len_str = std::str::from_utf8(rest_of_line)?;
+                let len_str = String::from_utf8(rest_of_line.to_vec())?;
                 let len = len_str.parse::<usize>()?;
                 let mut map = BTreeMap::new();
                 for _ in 0..len {
@@ -143,7 +145,7 @@ impl Types {
             }
 
             b'~' => {
-                let len_str = std::str::from_utf8(rest_of_line)?;
+                let len_str = String::from_utf8(rest_of_line.to_vec())?;
                 let len = len_str.parse::<usize>()?;
                 let mut set = Vec::with_capacity(len);
                 for _ in 0..len {
@@ -153,10 +155,10 @@ impl Types {
                 Ok(Types::Set(set))
             }
 
-            _ => Err(anyhow!(
-                "Unknown or unsupported RESP type prefix: {}",
-                type_prefix as char
-            )),
+            _ => {
+                let type_symbol = String::from_utf8(vec![type_prefix])?;
+                Err(ParseError::UnsupportedDataType(type_symbol))
+            }
         }
     }
 }
@@ -441,25 +443,25 @@ mod tests {
 
     #[async_trait]
     impl<'a> BytesReader for MockReader<'a> {
-        async fn read_line(&mut self) -> anyhow::Result<Vec<u8>> {
+        async fn read_line(&mut self) -> Result<Vec<u8>, ParseError> {
             if self.pos >= self.data.len() {
-                return Err(anyhow!("MockReader: No more data to read"));
+                return Err(ParseError::UnexpectedError);
             }
-            // Ищем \r\n в оставшейся части данных
+
             if let Some(i) = self.data[self.pos..].windows(2).position(|w| w == b"\r\n") {
                 let line_end = self.pos + i;
                 let line = self.data[self.pos..line_end].to_vec();
-                self.pos = line_end + 2; // Перемещаем указатель за \r\n
+                self.pos = line_end + 2;
                 Ok(line)
             } else {
-                Err(anyhow!("MockReader: No CRLF found"))
+                Err(ParseError::UnexpectedError)
             }
         }
 
-        async fn read_bytes(&mut self, n: usize) -> anyhow::Result<Vec<u8>> {
+        async fn read_bytes(&mut self, n: usize) -> Result<Vec<u8>, ParseError> {
             let bytes_end = self.pos + n;
             if bytes_end > self.data.len() {
-                return Err(anyhow!("MockReader: Not enough bytes to read"));
+                return Err(ParseError::UnexpectedError);
             }
             let bytes = self.data[self.pos..bytes_end].to_vec();
             self.pos = bytes_end;

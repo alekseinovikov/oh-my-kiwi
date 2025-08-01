@@ -1,7 +1,9 @@
 use crate::config::TcpConfig;
+use crate::error::KiwiError;
 use crate::tcp::TcpServer;
 
 mod config;
+mod error;
 mod parser;
 mod processor;
 mod reader;
@@ -11,7 +13,7 @@ mod types;
 mod writer;
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn main() -> std::io::Result<()> {
     tracing_subscriber::fmt::init();
 
     let config = TcpConfig::default();

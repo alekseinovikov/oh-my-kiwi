@@ -1,3 +1,4 @@
+use crate::error::KiwiError;
 use crate::processor::Response;
 use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
@@ -13,14 +14,15 @@ impl ResponseWriter {
         Self { writer }
     }
 
-    pub(crate) async fn write(&mut self, response: Response) -> anyhow::Result<()> {
+    pub(crate) async fn write(&mut self, response: Response) -> Result<(), KiwiError> {
         let types = response.to_types();
         let bytes = types.to_bytes();
-        let result = {
+        
+        {
             let mut writer = self.writer.lock().await;
             writer.write_all(&bytes).await
-        };
+        }?;
 
-        result.map_err(anyhow::Error::new)
+        Ok(())
     }
 }
