@@ -14,7 +14,23 @@ pub(crate) enum Command {
 
 impl Command {
     pub(crate) fn parse_command(name: &str, args: Vec<Types>) -> anyhow::Result<Command> {
-        Err(anyhow::anyhow!("Not implemented"))
+        let binding = name.to_uppercase();
+        let name = binding.as_str();
+        match name {
+            "PING" => Ok(Command::Ping),
+            "COMMAND" => Self::create_command(args),
+            _ => Err(anyhow::anyhow!("Unknown command")),
+        }
+    }
+
+    fn create_command(args: Vec<Types>) -> anyhow::Result<Command> {
+        if args.is_empty() || args.len() > 1 {
+            Err(anyhow::anyhow!("Command must have 1 argument"))
+        } else if let Types::BulkString(key) = &args[0] {
+            Ok(Command::Command(key.to_string()))
+        } else {
+            Err(anyhow::anyhow!("Command argument must be a string"))
+        }
     }
 }
 
@@ -30,10 +46,10 @@ impl CommandParser {
 
     pub(crate) async fn parse_next_command(&mut self) -> anyhow::Result<Command> {
         let types = Types::from_stream(&mut self.reader).await?;
-        Self::parse_command_from_tokens(types)
+        Self::parse_command_from_types(types)
     }
 
-    fn parse_command_from_tokens(types: Types) -> anyhow::Result<Command> {
+    fn parse_command_from_types(types: Types) -> anyhow::Result<Command> {
         match types {
             Types::Array(values) => Self::parse_command(values),
             _ => Err(anyhow::anyhow!("Command must be an array")),
