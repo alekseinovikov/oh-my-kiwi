@@ -1,18 +1,16 @@
 use crate::core::error::ParseError;
 use crate::core::BytesReader;
 use async_trait::async_trait;
-use std::sync::Arc;
-use tokio::io::AsyncReadExt;
+use tokio::io::{AsyncReadExt, ReadHalf};
 use tokio::net::TcpStream;
-use tokio::sync::Mutex;
 
 pub(crate) struct TcpBufferedReader {
-    reader: Arc<Mutex<TcpStream>>,
+    reader: ReadHalf<TcpStream>,
     buffer: Vec<u8>,
 }
 
 impl TcpBufferedReader {
-    pub(crate) fn new(reader: Arc<Mutex<TcpStream>>) -> Self {
+    pub(crate) fn new(reader: ReadHalf<TcpStream>) -> Self {
         Self {
             reader,
             buffer: Vec::with_capacity(1024 * 1024), // 1MB buffer
@@ -22,8 +20,7 @@ impl TcpBufferedReader {
     async fn ensure_buffer(&mut self) -> Result<(), ParseError> {
         while self.buffer.is_empty() {
             let mut buf = [0u8; 1024];
-            let mut reader_lock = self.reader.lock().await;
-            let n = reader_lock.read(&mut buf).await;
+            let n = self.reader.read(&mut buf).await;
             match n {
                 Ok(n) => {
                     if n == 0 {

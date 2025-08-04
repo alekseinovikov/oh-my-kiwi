@@ -3,9 +3,7 @@ use crate::transport::tcp::config::TcpConfig;
 use crate::transport::tcp::handler::TcpConnectionHandler;
 use crate::transport::tcp::reader::TcpBufferedReader;
 use crate::transport::tcp::writer::TcpBytesWriter;
-use std::sync::Arc;
 use tokio::net::TcpListener;
-use tokio::sync::Mutex;
 use tracing::{error, info};
 
 pub(crate) struct TcpServer<ProcessorFactory, ParserFactory, ResponseWriteFactory> {
@@ -48,9 +46,10 @@ impl<ProcessorFactory, ParserFactory, ResponseWriteFactory>
             let (stream, addr) = listener.accept().await?;
             info!("New connection from: ${addr}");
 
-            let stream = Arc::new(Mutex::new(stream));
-            let bytes_reader = TcpBufferedReader::new(stream.clone());
-            let bytes_writer = TcpBytesWriter::new(stream.clone());
+            let (read_half, write_half) = tokio::io::split(stream);
+
+            let bytes_reader = TcpBufferedReader::new(read_half);
+            let bytes_writer = TcpBytesWriter::new(write_half);
 
             let processor = (self.processor_factory)();
             let parser = (self.parser_factory)(bytes_reader);
