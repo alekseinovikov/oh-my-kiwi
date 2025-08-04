@@ -1,9 +1,9 @@
+use async_trait::async_trait;
 use crate::core::command::KiwiCommand;
 use crate::core::error::{KiwiError, ParseError};
 use crate::core::response::Response;
 
 pub(crate) mod command;
-pub mod config;
 pub mod error;
 pub mod response;
 pub mod types;
@@ -12,6 +12,7 @@ pub(crate) trait CommandParser {
     async fn parse_next_command(&mut self) -> Result<KiwiCommand, KiwiError>;
 }
 
+#[async_trait]
 pub(crate) trait CommandProcessor {
     async fn process(&self, command: KiwiCommand) -> Result<Response, KiwiError>;
 }

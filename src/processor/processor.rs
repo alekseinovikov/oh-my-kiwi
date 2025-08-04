@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use crate::core::CommandProcessor;
 use crate::core::command::KiwiCommand;
 use crate::core::error::KiwiError;
@@ -5,6 +6,7 @@ use crate::core::response::Response;
 
 pub(crate) struct KiwiCommandProcessor;
 
+#[async_trait]
 impl CommandProcessor for KiwiCommandProcessor {
     async fn process(&self, command: KiwiCommand) -> Result<Response, KiwiError> {
         self.process(command).await

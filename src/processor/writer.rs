@@ -29,21 +29,3 @@ impl<Writer: BytesWriter> KiwiResponseWriter<Writer> {
         Ok(())
     }
 }
-
-pub(crate) struct TcpBytesWriter {
-    writer: Arc<Mutex<TcpStream>>,
-}
-
-impl TcpBytesWriter {
-    pub(crate) fn new(writer: Arc<Mutex<TcpStream>>) -> Self {
-        Self { writer }
-    }
-}
-
-impl BytesWriter for TcpBytesWriter {
-    async fn write_all(&mut self, bytes: &[u8]) -> Result<(), KiwiError> {
-        let mut writer = self.writer.lock().await;
-        writer.write_all(&bytes).await?;
-        Ok(writer.flush().await?)
-    }
-}
