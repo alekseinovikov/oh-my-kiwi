@@ -13,9 +13,6 @@ pub enum KiwiError {
 
     #[error("Connection error: {0}")]
     ConnectionError(#[from] std::io::Error),
-
-    #[error("Unexpected error")]
-    UnexpectedError,
 }
 
 #[derive(Error, Debug)]

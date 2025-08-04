@@ -1,16 +1,11 @@
-use crate::config::TcpConfig;
-use crate::error::KiwiError;
-use crate::tcp::TcpServer;
+use transport::tcp::TcpServer;
+use core::config::TcpConfig;
 
-mod config;
-mod error;
+mod core;
 mod parser;
 mod processor;
-mod reader;
+mod transport;
 mod server;
-mod tcp;
-mod types;
-mod writer;
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {

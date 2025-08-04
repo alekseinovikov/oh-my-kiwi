@@ -1,5 +1,5 @@
-use crate::error::{ParseError};
-use crate::reader::BytesReader;
+use crate::core::error::ParseError;
+use crate::core::BytesReader;
 use num_bigint::BigInt;
 use ordered_float::OrderedFloat;
 use std::collections::BTreeMap;
@@ -38,7 +38,7 @@ impl Types {
         }
     }
 
-    pub(crate) async fn from_stream<R: BytesReader + Send>(
+    pub(crate) async fn from_bytes<R: BytesReader + Send>(
         reader: &mut R,
     ) -> Result<Self, ParseError> {
         let line = reader.read_line().await?;
@@ -126,7 +126,7 @@ impl Types {
                 let len = len_str.parse::<usize>()?;
                 let mut arr = Vec::with_capacity(len);
                 for _ in 0..len {
-                    arr.push(Box::pin(Self::from_stream(reader)).await?);
+                    arr.push(Box::pin(Self::from_bytes(reader)).await?);
                 }
                 Ok(Types::Array(arr))
             }
@@ -137,8 +137,8 @@ impl Types {
                 let mut map = BTreeMap::new();
                 for _ in 0..len {
                     // ИЗМЕНЕНИЯ ЗДЕСЬ
-                    let key = Box::pin(Self::from_stream(reader)).await?;
-                    let value = Box::pin(Self::from_stream(reader)).await?;
+                    let key = Box::pin(Self::from_bytes(reader)).await?;
+                    let value = Box::pin(Self::from_bytes(reader)).await?;
                     map.insert(key, value);
                 }
                 Ok(Types::Map(map))
@@ -150,7 +150,7 @@ impl Types {
                 let mut set = Vec::with_capacity(len);
                 for _ in 0..len {
                     // ИЗМЕНЕНИЕ ЗДЕСЬ
-                    set.push(Box::pin(Self::from_stream(reader)).await?);
+                    set.push(Box::pin(Self::from_bytes(reader)).await?);
                 }
                 Ok(Types::Set(set))
             }
@@ -315,7 +315,6 @@ fn set_to_bytes(set: &Vec<Types>) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use async_trait::async_trait;
     use num_bigint::BigInt;
     use std::collections::BTreeMap;
 
@@ -441,11 +440,10 @@ mod tests {
         }
     }
 
-    #[async_trait]
     impl<'a> BytesReader for MockReader<'a> {
         async fn read_line(&mut self) -> Result<Vec<u8>, ParseError> {
             if self.pos >= self.data.len() {
-                return Err(ParseError::UnexpectedError);
+                return Err(ParseError::ConnectionClosed);
             }
 
             if let Some(i) = self.data[self.pos..].windows(2).position(|w| w == b"\r\n") {
@@ -454,14 +452,14 @@ mod tests {
                 self.pos = line_end + 2;
                 Ok(line)
             } else {
-                Err(ParseError::UnexpectedError)
+                Err(ParseError::ConnectionClosed)
             }
         }
 
         async fn read_bytes(&mut self, n: usize) -> Result<Vec<u8>, ParseError> {
             let bytes_end = self.pos + n;
             if bytes_end > self.data.len() {
-                return Err(ParseError::UnexpectedError);
+                return Err(ParseError::ConnectionClosed);
             }
             let bytes = self.data[self.pos..bytes_end].to_vec();
             self.pos = bytes_end;
@@ -473,7 +471,7 @@ mod tests {
     async fn test_parse_simple_string() {
         let input = b"+OK\r\n";
         let mut reader = MockReader::new(input);
-        let result = Types::from_stream(&mut reader).await.unwrap();
+        let result = Types::from_bytes(&mut reader).await.unwrap();
         assert_eq!(result, Types::SimpleString("OK".to_string()));
     }
 
@@ -481,7 +479,7 @@ mod tests {
     async fn test_parse_simple_error() {
         let input = b"-Error message\r\n";
         let mut reader = MockReader::new(input);
-        let result = Types::from_stream(&mut reader).await.unwrap();
+        let result = Types::from_bytes(&mut reader).await.unwrap();
         assert_eq!(result, Types::SimpleError("Error message".to_string()));
     }
 
@@ -489,7 +487,7 @@ mod tests {
     async fn test_parse_integer() {
         let input = b":12345\r\n";
         let mut reader = MockReader::new(input);
-        let result = Types::from_stream(&mut reader).await.unwrap();
+        let result = Types::from_bytes(&mut reader).await.unwrap();
         assert_eq!(result, Types::Integer(12345));
     }
 
@@ -497,7 +495,7 @@ mod tests {
     async fn test_parse_bulk_string() {
         let input = b"$6\r\nfoobar\r\n";
         let mut reader = MockReader::new(input);
-        let result = Types::from_stream(&mut reader).await.unwrap();
+        let result = Types::from_bytes(&mut reader).await.unwrap();
         assert_eq!(result, Types::BulkString("foobar".to_string()));
     }
 
@@ -505,7 +503,7 @@ mod tests {
     async fn test_parse_empty_bulk_string() {
         let input = b"$0\r\n\r\n";
         let mut reader = MockReader::new(input);
-        let result = Types::from_stream(&mut reader).await.unwrap();
+        let result = Types::from_bytes(&mut reader).await.unwrap();
         assert_eq!(result, Types::BulkString("".to_string()));
     }
 
@@ -513,7 +511,7 @@ mod tests {
     async fn test_parse_null_bulk_string() {
         let input = b"$-1\r\n";
         let mut reader = MockReader::new(input);
-        let result = Types::from_stream(&mut reader).await.unwrap();
+        let result = Types::from_bytes(&mut reader).await.unwrap();
         assert_eq!(result, Types::Null);
     }
 
@@ -521,7 +519,7 @@ mod tests {
     async fn test_parse_null() {
         let input = b"_\r\n";
         let mut reader = MockReader::new(input);
-        let result = Types::from_stream(&mut reader).await.unwrap();
+        let result = Types::from_bytes(&mut reader).await.unwrap();
         assert_eq!(result, Types::Null);
     }
 
@@ -529,12 +527,12 @@ mod tests {
     async fn test_parse_boolean() {
         let input_true = b"#t\r\n";
         let mut reader_true = MockReader::new(input_true);
-        let result_true = Types::from_stream(&mut reader_true).await.unwrap();
+        let result_true = Types::from_bytes(&mut reader_true).await.unwrap();
         assert_eq!(result_true, Types::Boolean(true));
 
         let input_false = b"#f\r\n";
         let mut reader_false = MockReader::new(input_false);
-        let result_false = Types::from_stream(&mut reader_false).await.unwrap();
+        let result_false = Types::from_bytes(&mut reader_false).await.unwrap();
         assert_eq!(result_false, Types::Boolean(false));
     }
 
@@ -542,7 +540,7 @@ mod tests {
     async fn test_parse_double() {
         let input = b",1.234\r\n";
         let mut reader = MockReader::new(input);
-        let result = Types::from_stream(&mut reader).await.unwrap();
+        let result = Types::from_bytes(&mut reader).await.unwrap();
         assert_eq!(result, Types::Double(OrderedFloat(1.234)));
     }
 
@@ -550,7 +548,7 @@ mod tests {
     async fn test_parse_double_inf() {
         let input = b",inf\r\n";
         let mut reader = MockReader::new(input);
-        let result = Types::from_stream(&mut reader).await.unwrap();
+        let result = Types::from_bytes(&mut reader).await.unwrap();
         assert_eq!(result, Types::Double(OrderedFloat(f64::INFINITY)));
     }
 
@@ -558,7 +556,7 @@ mod tests {
     async fn test_parse_big_number() {
         let input = b"(12345678901234567890\r\n";
         let mut reader = MockReader::new(input);
-        let result = Types::from_stream(&mut reader).await.unwrap();
+        let result = Types::from_bytes(&mut reader).await.unwrap();
         let expected = BigInt::parse_bytes(b"12345678901234567890", 10).unwrap();
         assert_eq!(result, Types::BigNumber(expected));
     }
@@ -567,7 +565,7 @@ mod tests {
     async fn test_parse_bulk_error() {
         let input = b"!13\r\nError message\r\n";
         let mut reader = MockReader::new(input);
-        let result = Types::from_stream(&mut reader).await.unwrap();
+        let result = Types::from_bytes(&mut reader).await.unwrap();
         assert_eq!(result, Types::BulkError("Error message".to_string()));
     }
 
@@ -575,7 +573,7 @@ mod tests {
     async fn test_parse_array() {
         let input = b"*2\r\n$3\r\nfoo\r\n:42\r\n";
         let mut reader = MockReader::new(input);
-        let result = Types::from_stream(&mut reader).await.unwrap();
+        let result = Types::from_bytes(&mut reader).await.unwrap();
         let expected = Types::Array(vec![
             Types::BulkString("foo".to_string()),
             Types::Integer(42),
@@ -587,7 +585,7 @@ mod tests {
     async fn test_parse_empty_array() {
         let input = b"*0\r\n";
         let mut reader = MockReader::new(input);
-        let result = Types::from_stream(&mut reader).await.unwrap();
+        let result = Types::from_bytes(&mut reader).await.unwrap();
         assert_eq!(result, Types::Array(vec![]));
     }
 
@@ -595,7 +593,7 @@ mod tests {
     async fn test_parse_nested_array() {
         let input = b"*2\r\n:1\r\n*2\r\n+two\r\n+three\r\n";
         let mut reader = MockReader::new(input);
-        let result = Types::from_stream(&mut reader).await.unwrap();
+        let result = Types::from_bytes(&mut reader).await.unwrap();
         let expected = Types::Array(vec![
             Types::Integer(1),
             Types::Array(vec![
@@ -610,7 +608,7 @@ mod tests {
     async fn test_parse_map() {
         let input = b"%2\r\n+key1\r\n:1\r\n+key2\r\n:2\r\n";
         let mut reader = MockReader::new(input);
-        let result = Types::from_stream(&mut reader).await.unwrap();
+        let result = Types::from_bytes(&mut reader).await.unwrap();
 
         let mut expected_map = BTreeMap::new();
         expected_map.insert(Types::SimpleString("key1".to_string()), Types::Integer(1));
@@ -623,7 +621,7 @@ mod tests {
     async fn test_parse_empty_map() {
         let input = b"%0\r\n";
         let mut reader = MockReader::new(input);
-        let result = Types::from_stream(&mut reader).await.unwrap();
+        let result = Types::from_bytes(&mut reader).await.unwrap();
         assert_eq!(result, Types::Map(BTreeMap::new()));
     }
 
@@ -631,7 +629,7 @@ mod tests {
     async fn test_parse_set() {
         let input = b"~3\r\n+one\r\n:2\r\n#t\r\n";
         let mut reader = MockReader::new(input);
-        let result = Types::from_stream(&mut reader).await.unwrap();
+        let result = Types::from_bytes(&mut reader).await.unwrap();
         let expected = Types::Set(vec![
             Types::SimpleString("one".to_string()),
             Types::Integer(2),

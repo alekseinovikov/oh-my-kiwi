@@ -1,20 +1,16 @@
-use crate::error::{KiwiError, ParseError};
+use crate::core::error::{KiwiError, ParseError};
 use std::sync::Arc;
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpStream;
 use tokio::sync::Mutex;
+use crate::core::BytesReader;
 
-pub(crate) trait BytesReader {
-    async fn read_line(&mut self) -> Result<Vec<u8>, ParseError>;
-    async fn read_bytes(&mut self, n: usize) -> Result<Vec<u8>, ParseError>;
-}
-
-pub(crate) struct BufferedReader {
+pub(crate) struct TcpBufferedReader {
     reader: Arc<Mutex<TcpStream>>,
     buffer: Vec<u8>,
 }
 
-impl BufferedReader {
+impl TcpBufferedReader {
     pub(crate) fn new(reader: Arc<Mutex<TcpStream>>) -> Self {
         Self {
             reader,
@@ -41,7 +37,7 @@ impl BufferedReader {
     }
 }
 
-impl BytesReader for BufferedReader {
+impl BytesReader for TcpBufferedReader {
     async fn read_line(&mut self) -> Result<Vec<u8>, ParseError> {
         loop {
             if let Some(pos) = self.buffer.windows(2).position(|w| w == b"\r\n") {

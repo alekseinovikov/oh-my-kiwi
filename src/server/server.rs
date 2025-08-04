@@ -1,21 +1,26 @@
-use crate::error::KiwiError;
-use crate::parser::CommandParser;
-use crate::processor::{CommandProcessor, Response};
-use crate::writer::ResponseWriter;
+use crate::core::error::KiwiError;
+use crate::core::response::Response;
+use crate::core::{CommandParser, CommandProcessor, ResponseWriter};
 use tracing::error;
 
-pub(crate) struct RESP3Server {
-    parser: CommandParser,
-    processor: CommandProcessor,
-    writer: ResponseWriter,
+pub(crate) struct RESP3Server<Parser, Processor, Writer>
+where
+    Parser: CommandParser,
+    Processor: CommandProcessor,
+    Writer: ResponseWriter,
+{
+    parser: Parser,
+    processor: Processor,
+    writer: Writer,
 }
 
-impl RESP3Server {
-    pub(crate) const fn new(
-        parser: CommandParser,
-        processor: CommandProcessor,
-        writer: ResponseWriter,
-    ) -> Self {
+impl<Parser, Processor, Writer> RESP3Server<Parser, Processor, Writer>
+where
+    Parser: CommandParser,
+    Processor: CommandProcessor,
+    Writer: ResponseWriter,
+{
+    pub(crate) const fn new(parser: Parser, processor: Processor, writer: Writer) -> Self {
         Self {
             parser,
             processor,
@@ -24,7 +29,12 @@ impl RESP3Server {
     }
 }
 
-impl RESP3Server {
+impl<Parser, Processor, Writer> RESP3Server<Parser, Processor, Writer>
+where
+    Parser: CommandParser,
+    Processor: CommandProcessor,
+    Writer: ResponseWriter,
+{
     pub(crate) async fn run(&mut self) {
         loop {
             let run_result = self.run_once().await;
@@ -59,7 +69,6 @@ impl RESP3Server {
             KiwiError::ParseError(err) => Ok(Response::Error(err.to_string())),
             KiwiError::CommandError(err) => Ok(Response::Error(err.to_string())),
             KiwiError::ConnectionError(_) => Err(err),
-            KiwiError::UnexpectedError => Err(err),
         }
     }
 }

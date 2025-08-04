@@ -1,8 +1,9 @@
-use crate::config::TcpConfig;
-use crate::parser::CommandParser;
-use crate::processor::CommandProcessor;
-use crate::server::RESP3Server;
-use crate::writer::ResponseWriter;
+use crate::core::config::TcpConfig;
+use crate::parser::parser::KiwiCommandParser;
+use crate::parser::reader::TcpBufferedReader;
+use crate::processor::processor::KiwiCommandProcessor;
+use crate::processor::writer::{KiwiResponseWriter, TcpBytesWriter};
+use crate::server::server::RESP3Server;
 use std::sync::Arc;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Mutex;
@@ -33,12 +34,15 @@ impl TcpServer {
         }
     }
 
-    async fn handle_client(stream: TcpStream) -> std::io::Result<()>{
-        let processor = CommandProcessor::new();
+    async fn handle_client(stream: TcpStream) -> std::io::Result<()> {
+        let processor = KiwiCommandProcessor::new();
         let stream = Arc::new(Mutex::new(stream));
 
-        let parser = CommandParser::new(stream.clone());
-        let writer = ResponseWriter::new(stream.clone());
+        let bytes_reader = TcpBufferedReader::new(stream.clone());
+        let bytes_writer = TcpBytesWriter::new(stream.clone());
+
+        let parser = KiwiCommandParser::new(bytes_reader);
+        let writer = KiwiResponseWriter::new(bytes_writer);
 
         let mut server = RESP3Server::new(parser, processor, writer);
         server.run().await;
