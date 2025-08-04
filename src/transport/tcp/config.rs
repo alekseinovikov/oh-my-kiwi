@@ -15,6 +15,7 @@ impl Default for TcpConfig {
     }
 }
 
+#[allow(dead_code)]
 impl TcpConfig {
     pub fn new() -> Self {
         Self::default()

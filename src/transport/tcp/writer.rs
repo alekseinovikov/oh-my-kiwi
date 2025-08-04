@@ -1,6 +1,7 @@
 use crate::core::error::KiwiError;
 use crate::core::BytesWriter;
 use std::sync::Arc;
+use async_trait::async_trait;
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 use tokio::sync::Mutex;
@@ -15,6 +16,7 @@ impl TcpBytesWriter {
     }
 }
 
+#[async_trait]
 impl BytesWriter for TcpBytesWriter {
     async fn write_all(&mut self, bytes: &[u8]) -> Result<(), KiwiError> {
         let mut writer = self.writer.lock().await;

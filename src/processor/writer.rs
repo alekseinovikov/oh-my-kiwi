@@ -1,16 +1,14 @@
 use crate::core::error::KiwiError;
 use crate::core::response::Response;
 use crate::core::{BytesWriter, ResponseWriter};
-use std::sync::Arc;
-use tokio::io::AsyncWriteExt;
-use tokio::net::TcpStream;
-use tokio::sync::Mutex;
+use async_trait::async_trait;
 
 pub(crate) struct KiwiResponseWriter<Writer: BytesWriter> {
     writer: Writer,
 }
 
-impl<Writer: BytesWriter> ResponseWriter for KiwiResponseWriter<Writer> {
+#[async_trait]
+impl<Writer: BytesWriter + Send> ResponseWriter for KiwiResponseWriter<Writer> {
     async fn write(&mut self, response: Response) -> Result<(), KiwiError> {
         self.write(response).await
     }

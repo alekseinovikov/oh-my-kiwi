@@ -8,6 +8,7 @@ pub mod error;
 pub mod response;
 pub mod types;
 
+#[async_trait]
 pub(crate) trait CommandParser {
     async fn parse_next_command(&mut self) -> Result<KiwiCommand, KiwiError>;
 }
@@ -17,15 +18,18 @@ pub(crate) trait CommandProcessor {
     async fn process(&self, command: KiwiCommand) -> Result<Response, KiwiError>;
 }
 
+#[async_trait]
 pub(crate) trait ResponseWriter {
     async fn write(&mut self, response: Response) -> Result<(), KiwiError>;
 }
 
+#[async_trait]
 pub(crate) trait BytesReader {
     async fn read_line(&mut self) -> Result<Vec<u8>, ParseError>;
     async fn read_bytes(&mut self, n: usize) -> Result<Vec<u8>, ParseError>;
 }
 
+#[async_trait]
 pub(crate) trait BytesWriter {
     async fn write_all(&mut self, bytes: &[u8]) -> Result<(), KiwiError>;
 }

@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use crate::core::error::{CommandError, KiwiError};
 use crate::core::types::Types;
 use crate::core::{command, BytesReader, CommandParser};
@@ -7,6 +8,7 @@ pub(crate) struct KiwiCommandParser<Reader: BytesReader + Send> {
     reader: Reader,
 }
 
+#[async_trait]
 impl<Reader: BytesReader + Send> CommandParser for KiwiCommandParser<Reader> {
     async fn parse_next_command(&mut self) -> Result<KiwiCommand, KiwiError> {
         self.parse_next_command().await

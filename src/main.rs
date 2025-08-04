@@ -1,21 +1,22 @@
-use crate::transport::tcp::server::TcpServer;
-use transport::tcp::config::TcpConfig;
+use crate::parser::parser::KiwiCommandParser;
 use crate::processor::processor::KiwiCommandProcessor;
+use crate::processor::writer::KiwiResponseWriter;
+use crate::transport::tcp::start_tcp_server;
 
 mod core;
 mod parser;
 mod processor;
+mod provider;
 mod server;
 mod transport;
-mod provider;
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
     tracing_subscriber::fmt::init();
 
     let processor_factory = move || KiwiCommandProcessor::new();
+    let parser_factory = move |byte_reader| KiwiCommandParser::new(byte_reader);
+    let response_writer_factory = move |byte_writer| KiwiResponseWriter::new(byte_writer);
 
-    let config = TcpConfig::default();
-    let tcp = TcpServer::new(config, processor_factory);
-    tcp.run().await
+    start_tcp_server(processor_factory, parser_factory, response_writer_factory).await
 }

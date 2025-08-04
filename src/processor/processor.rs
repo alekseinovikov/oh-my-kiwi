@@ -1,8 +1,8 @@
-use async_trait::async_trait;
-use crate::core::CommandProcessor;
 use crate::core::command::KiwiCommand;
 use crate::core::error::KiwiError;
 use crate::core::response::Response;
+use crate::core::CommandProcessor;
+use async_trait::async_trait;
 
 pub(crate) struct KiwiCommandProcessor;
 
@@ -22,8 +22,8 @@ impl KiwiCommandProcessor {
         match command {
             KiwiCommand::None => Ok(Response::Ok),
             KiwiCommand::Ping => Ok(Response::Pong),
-            KiwiCommand::Command(arg) => Ok(Response::Ok),
-            KiwiCommand::Set { key, value } => Ok(Response::Ok),
+            KiwiCommand::Command(_) => Ok(Response::Ok),
+            KiwiCommand::Set { key: _, value: _ } => Ok(Response::Ok),
         }
     }
 }

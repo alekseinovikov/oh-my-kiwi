@@ -1,6 +1,7 @@
 use crate::core::error::CommandError;
 use crate::core::types::Types;
 
+#[allow(dead_code)]
 #[derive(Debug)]
 pub(crate) enum KiwiCommand {
     None,

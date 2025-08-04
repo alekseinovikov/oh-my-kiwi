@@ -317,6 +317,7 @@ mod tests {
     use super::*;
     use num_bigint::BigInt;
     use std::collections::BTreeMap;
+    use async_trait::async_trait;
 
     #[test]
     fn test_simple_string() {
@@ -440,6 +441,7 @@ mod tests {
         }
     }
 
+    #[async_trait]
     impl<'a> BytesReader for MockReader<'a> {
         async fn read_line(&mut self) -> Result<Vec<u8>, ParseError> {
             if self.pos >= self.data.len() {

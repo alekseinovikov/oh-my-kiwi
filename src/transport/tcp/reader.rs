@@ -1,9 +1,10 @@
-use crate::core::error::{KiwiError, ParseError};
+use crate::core::error::ParseError;
+use crate::core::BytesReader;
+use async_trait::async_trait;
 use std::sync::Arc;
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpStream;
 use tokio::sync::Mutex;
-use crate::core::BytesReader;
 
 pub(crate) struct TcpBufferedReader {
     reader: Arc<Mutex<TcpStream>>,
@@ -37,6 +38,7 @@ impl TcpBufferedReader {
     }
 }
 
+#[async_trait]
 impl BytesReader for TcpBufferedReader {
     async fn read_line(&mut self) -> Result<Vec<u8>, ParseError> {
         loop {
