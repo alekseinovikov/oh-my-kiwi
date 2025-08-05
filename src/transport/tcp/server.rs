@@ -1,49 +1,54 @@
-use crate::core::{CommandParser, CommandProcessor, ResponseWriter};
+use crate::core::{CommandParser, CommandProcessor, ErrorHandler, ResponseWriter};
 use crate::transport::tcp::config::TcpConfig;
 use crate::transport::tcp::handler::TcpConnectionHandler;
 use crate::transport::tcp::reader::TcpBufferedReader;
 use crate::transport::tcp::writer::TcpBytesWriter;
 use tokio::net::TcpListener;
-use tracing::{error, info};
+use tracing::{error, info, info_span, Instrument};
 
-pub(crate) struct TcpServer<ProcessorFactory, ParserFactory, ResponseWriteFactory> {
+pub(crate) struct TcpServer<PF, CPF, RF, EHF> {
     tcp_config: TcpConfig,
-    processor_factory: ProcessorFactory,
-    parser_factory: ParserFactory,
-    response_write_factory: ResponseWriteFactory,
+    processor_factory: PF,
+    parser_factory: CPF,
+    response_write_factory: RF,
+    error_handler_factory: EHF,
 }
 
-impl<ProcessorFactory, ParserFactory, ResponseWriteFactory>
-    TcpServer<ProcessorFactory, ParserFactory, ResponseWriteFactory>
-{
+impl<PF, CPF, RF, EHF> TcpServer<PF, CPF, RF, EHF> {
     pub(crate) fn new(
         tcp_config: TcpConfig,
-        processor_factory: ProcessorFactory,
-        parser_factory: ParserFactory,
-        response_write_factory: ResponseWriteFactory,
+        processor_factory: PF,
+        parser_factory: CPF,
+        response_write_factory: RF,
+        error_handler_factory: EHF,
     ) -> Self {
         Self {
             tcp_config,
             processor_factory,
             parser_factory,
             response_write_factory,
+            error_handler_factory,
         }
     }
 
-    pub(crate) async fn run<Processor, Parser, Responser>(&self) -> std::io::Result<()>
+    pub(crate) async fn run<P, CP, R, EH>(&self) -> std::io::Result<()>
     where
-        Processor: CommandProcessor + Send + Sync + 'static,
-        ProcessorFactory: Fn() -> Processor + Send + Sync + 'static,
-        Parser: CommandParser + Send + Sync + 'static,
-        ParserFactory: Fn(TcpBufferedReader) -> Parser + Send + Sync + 'static,
-        Responser: ResponseWriter + Send + Sync + 'static,
-        ResponseWriteFactory: Fn(TcpBytesWriter) -> Responser + Send + Sync + 'static,
+        P: CommandProcessor + Send + Sync + 'static,
+        PF: Fn() -> P + Send + Sync + 'static,
+        CP: CommandParser + Send + Sync + 'static,
+        CPF: Fn(TcpBufferedReader) -> CP + Send + Sync + 'static,
+        R: ResponseWriter + Send + Sync + 'static,
+        RF: Fn(TcpBytesWriter) -> R + Send + Sync + 'static,
+        EH: ErrorHandler<R> + Send + Sync + 'static,
+        EHF: Fn() -> EH + Send + Sync + 'static,
     {
         let socket_addr = self.tcp_config.socket_addr()?;
         let listener = TcpListener::bind(socket_addr).await?;
 
         loop {
             let (stream, addr) = listener.accept().await?;
+
+            let info_span = info_span!("connection", addr = %addr);
             info!("New connection from: ${addr}");
 
             let (read_half, write_half) = tokio::io::split(stream);
@@ -54,12 +59,21 @@ impl<ProcessorFactory, ParserFactory, ResponseWriteFactory>
             let processor = (self.processor_factory)();
             let parser = (self.parser_factory)(bytes_reader);
             let response_writer = (self.response_write_factory)(bytes_writer);
-            tokio::spawn(async move {
-                let handler = TcpConnectionHandler::new(processor, parser, response_writer);
-                if let Err(e) = handler.handle_client().await {
-                    error!("Critical error working with connection {}: {:?}", addr, e);
+            let error_handler = (self.error_handler_factory)();
+            tokio::spawn(
+                async move {
+                    let handler = TcpConnectionHandler::new(
+                        processor,
+                        parser,
+                        response_writer,
+                        error_handler,
+                    );
+                    if let Err(e) = handler.handle_client().await {
+                        error!("Critical error working with connection {}: {:?}", addr, e);
+                    }
                 }
-            });
+                .instrument(info_span),
+            );
         }
     }
 }

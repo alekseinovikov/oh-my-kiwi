@@ -1,10 +1,9 @@
-use async_trait::async_trait;
 use crate::core::command::KiwiCommand;
-use crate::core::error::{KiwiError, ParseError};
 use crate::core::response::Response;
+use crate::error::{KiwiError, ParseError};
+use async_trait::async_trait;
 
 pub(crate) mod command;
-pub mod error;
 pub mod response;
 pub mod types;
 
@@ -32,4 +31,9 @@ pub(crate) trait BytesReader {
 #[async_trait]
 pub(crate) trait BytesWriter {
     async fn write_all(&mut self, bytes: &[u8]) -> Result<(), KiwiError>;
+}
+
+#[async_trait]
+pub(crate) trait ErrorHandler<RW> {
+    async fn handle_error(&self, response_writer: &mut RW, error: KiwiError) -> Option<KiwiError>;
 }

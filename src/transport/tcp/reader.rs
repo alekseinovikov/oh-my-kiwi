@@ -1,5 +1,5 @@
-use crate::core::error::ParseError;
 use crate::core::BytesReader;
+use crate::error::ParseError;
 use async_trait::async_trait;
 use tokio::io::{AsyncReadExt, ReadHalf};
 use tokio::net::TcpStream;

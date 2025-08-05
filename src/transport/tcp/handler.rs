@@ -1,23 +1,26 @@
-use crate::core::{CommandParser, CommandProcessor, ResponseWriter};
+use crate::core::{CommandParser, CommandProcessor, ErrorHandler, ResponseWriter};
 use crate::server::server::RESP3Server;
 
-pub(super) struct TcpConnectionHandler<Processor, Parser, Responser> {
-    processor: Processor,
-    parser: Parser,
-    response_writer: Responser,
+pub(super) struct TcpConnectionHandler<P, CP, R, EH> {
+    processor: P,
+    parser: CP,
+    response_writer: R,
+    error_handler: EH,
 }
 
-impl<Processor, Parser, Responser> TcpConnectionHandler<Processor, Parser, Responser>
+impl<P, CP, R, EH> TcpConnectionHandler<P, CP, R, EH>
 where
-    Processor: CommandProcessor + Send,
-    Parser: CommandParser + Send,
-    Responser: ResponseWriter + Send,
+    P: CommandProcessor + Send,
+    CP: CommandParser + Send,
+    R: ResponseWriter + Send,
+    EH: ErrorHandler<R> + Send,
 {
-    pub(super) fn new(processor: Processor, parser: Parser, response_writer: Responser) -> Self {
+    pub(super) fn new(processor: P, parser: CP, response_writer: R, error_handler: EH) -> Self {
         Self {
             processor,
             parser,
             response_writer,
+            error_handler,
         }
     }
 
@@ -25,8 +28,9 @@ where
         let processor = self.processor;
         let parser = self.parser;
         let response_writer = self.response_writer;
+        let error_handler = self.error_handler;
 
-        let mut server = RESP3Server::new(parser, processor, response_writer);
+        let mut server = RESP3Server::new(parser, processor, response_writer, error_handler);
         server.run().await;
         Ok(())
     }

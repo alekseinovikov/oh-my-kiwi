@@ -1,7 +1,7 @@
-use async_trait::async_trait;
-use crate::core::error::{CommandError, KiwiError};
 use crate::core::types::Types;
 use crate::core::{command, BytesReader, CommandParser};
+use crate::error::{CommandError, KiwiError};
+use async_trait::async_trait;
 pub(crate) use command::KiwiCommand;
 
 pub(crate) struct KiwiCommandParser<Reader: BytesReader + Send> {

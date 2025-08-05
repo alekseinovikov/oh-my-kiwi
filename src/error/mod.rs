@@ -1,3 +1,5 @@
+pub(crate) mod handler;
+
 use std::num::{ParseFloatError, ParseIntError};
 use std::string::FromUtf8Error;
 use thiserror::Error;
@@ -13,6 +15,9 @@ pub enum KiwiError {
 
     #[error("Connection error: {0}")]
     ConnectionError(#[from] std::io::Error),
+
+    #[error("Connection closed")]
+    ConnectionClosed,
 }
 
 #[derive(Error, Debug)]

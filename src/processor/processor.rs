@@ -1,8 +1,8 @@
 use crate::core::command::KiwiCommand;
-use crate::core::error::KiwiError;
 use crate::core::response::Response;
 use crate::core::CommandProcessor;
 use async_trait::async_trait;
+use crate::error::KiwiError;
 
 pub(crate) struct KiwiCommandProcessor;
 

@@ -1,5 +1,5 @@
-use crate::core::error::KiwiError;
 use crate::core::BytesWriter;
+use crate::error::KiwiError;
 use async_trait::async_trait;
 use tokio::io::{AsyncWriteExt, WriteHalf};
 use tokio::net::TcpStream;

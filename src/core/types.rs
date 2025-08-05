@@ -1,5 +1,5 @@
-use crate::core::error::ParseError;
 use crate::core::BytesReader;
+use crate::error::ParseError;
 use num_bigint::BigInt;
 use ordered_float::OrderedFloat;
 use std::collections::BTreeMap;
@@ -315,9 +315,9 @@ fn set_to_bytes(set: &Vec<Types>) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use async_trait::async_trait;
     use num_bigint::BigInt;
     use std::collections::BTreeMap;
-    use async_trait::async_trait;
 
     #[test]
     fn test_simple_string() {

@@ -1,6 +1,6 @@
-use crate::core::error::KiwiError;
 use crate::core::response::Response;
 use crate::core::{BytesWriter, ResponseWriter};
+use crate::error::KiwiError;
 use async_trait::async_trait;
 
 pub(crate) struct KiwiResponseWriter<Writer: BytesWriter> {

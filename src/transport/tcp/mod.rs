@@ -1,4 +1,4 @@
-use crate::core::{CommandParser, CommandProcessor, ResponseWriter};
+use crate::core::{CommandParser, CommandProcessor, ErrorHandler, ResponseWriter};
 use crate::transport::tcp::config::TcpConfig;
 use crate::transport::tcp::reader::TcpBufferedReader;
 use crate::transport::tcp::server::TcpServer;
@@ -10,25 +10,21 @@ mod reader;
 pub(crate) mod server;
 mod writer;
 
-pub async fn start_tcp_server<
-    Processor,
-    ProcessorFactory,
-    Parser,
-    ParserFactory,
-    Responser,
-    ResponseWriteFactory,
->(
-    processor_factory: ProcessorFactory,
-    parser_factory: ParserFactory,
-    response_writer_factory: ResponseWriteFactory,
+pub async fn start_tcp_server<P, PF, CP, CPF, R, RF, EH, EHF>(
+    processor_factory: PF,
+    parser_factory: CPF,
+    response_writer_factory: RF,
+    error_handler_factory: EHF,
 ) -> std::io::Result<()>
 where
-    Processor: CommandProcessor + Send + Sync + 'static,
-    ProcessorFactory: Fn() -> Processor + Send + Sync + 'static,
-    Parser: CommandParser + Send + Sync + 'static,
-    ParserFactory: Fn(TcpBufferedReader) -> Parser + Send + Sync + 'static,
-    Responser: ResponseWriter + Send + Sync + 'static,
-    ResponseWriteFactory: Fn(TcpBytesWriter) -> Responser + Send + Sync + 'static,
+    P: CommandProcessor + Send + Sync + 'static,
+    PF: Fn() -> P + Send + Sync + 'static,
+    CP: CommandParser + Send + Sync + 'static,
+    CPF: Fn(TcpBufferedReader) -> CP + Send + Sync + 'static,
+    R: ResponseWriter + Send + Sync + 'static,
+    RF: Fn(TcpBytesWriter) -> R + Send + Sync + 'static,
+    EH: ErrorHandler<R> + Send + Sync + 'static,
+    EHF: Fn() -> EH + Send + Sync + 'static,
 {
     let config = TcpConfig::default();
     let tcp = TcpServer::new(
@@ -36,6 +32,7 @@ where
         processor_factory,
         parser_factory,
         response_writer_factory,
+        error_handler_factory,
     );
     tcp.run().await
 }
