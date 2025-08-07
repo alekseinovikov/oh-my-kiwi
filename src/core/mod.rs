@@ -14,7 +14,7 @@ pub(crate) trait CommandParser {
 
 #[async_trait]
 pub(crate) trait CommandProcessor {
-    async fn process(&self, command: KiwiCommand) -> Result<Response, KiwiError>;
+    async fn process(&mut self, command: KiwiCommand) -> Result<Response, KiwiError>;
 }
 
 #[async_trait]
@@ -36,4 +36,10 @@ pub(crate) trait BytesWriter {
 #[async_trait]
 pub(crate) trait ErrorHandler<RW> {
     async fn handle_error(&self, response_writer: &mut RW, error: KiwiError) -> Option<KiwiError>;
+}
+
+#[async_trait]
+pub(crate) trait Engine {
+    async fn get(&self, key: &Vec<u8>) -> Option<Vec<u8>>;
+    async fn set(&self, key: Vec<u8>, value: Vec<u8>);
 }

@@ -1,5 +1,6 @@
 use crate::core::BytesReader;
 use crate::error::ParseError;
+use async_trait::async_trait;
 use num_bigint::BigInt;
 use ordered_float::OrderedFloat;
 use std::collections::BTreeMap;
@@ -36,6 +37,11 @@ impl Types {
             Types::Map(map) => map_to_bytes(map),
             Types::Set(set) => set_to_bytes(set),
         }
+    }
+
+    pub(crate) async fn from_slice(data: &[u8]) -> Result<Self, ParseError> {
+        let mut cursor = BytesCursor::new(data);
+        Self::from_bytes(&mut cursor).await
     }
 
     pub(crate) async fn from_bytes<R: BytesReader + Send>(
@@ -310,6 +316,45 @@ fn set_to_bytes(set: &Vec<Types>) -> Vec<u8> {
     }
 
     result
+}
+
+struct BytesCursor<'a> {
+    data: &'a [u8],
+    pos: usize,
+}
+
+impl<'a> BytesCursor<'a> {
+    fn new(data: &'a [u8]) -> Self {
+        Self { data, pos: 0 }
+    }
+}
+
+#[async_trait]
+impl<'a> BytesReader for BytesCursor<'a> {
+    async fn read_line(&mut self) -> Result<Vec<u8>, ParseError> {
+        if self.pos >= self.data.len() {
+            return Err(ParseError::ConnectionClosed);
+        }
+
+        if let Some(i) = self.data[self.pos..].windows(2).position(|w| w == CRLF) {
+            let line_end = self.pos + i;
+            let line = self.data[self.pos..line_end].to_vec();
+            self.pos = line_end + CRLF_LEN;
+            Ok(line)
+        } else {
+            Err(ParseError::MissingSeparator)
+        }
+    }
+
+    async fn read_bytes(&mut self, n: usize) -> Result<Vec<u8>, ParseError> {
+        let bytes_end = self.pos + n;
+        if bytes_end > self.data.len() {
+            return Err(ParseError::ConnectionClosed);
+        }
+        let bytes = self.data[self.pos..bytes_end].to_vec();
+        self.pos = bytes_end;
+        Ok(bytes)
+    }
 }
 
 #[cfg(test)]
@@ -638,5 +683,28 @@ mod tests {
             Types::Boolean(true),
         ]);
         assert_eq!(result, expected);
+    }
+
+    #[tokio::test]
+    async fn test_from_slice_complex() {
+        let original_value = Types::Array(vec![
+            Types::Integer(1),
+            Types::Array(vec![Types::Integer(2), Types::Integer(3)]),
+            Types::Map({
+                let mut map = BTreeMap::new();
+                map.insert(
+                    Types::SimpleString("key".to_string()),
+                    Types::BulkString("value".to_string()),
+                );
+                map
+            }),
+            Types::Null,
+            Types::Boolean(true),
+        ]);
+
+        let bytes: Vec<u8> = original_value.to_bytes();
+        let parsed_value = Types::from_slice(&bytes).await.unwrap();
+
+        assert_eq!(original_value, parsed_value);
     }
 }

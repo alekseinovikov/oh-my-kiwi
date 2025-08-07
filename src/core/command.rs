@@ -8,6 +8,7 @@ pub(crate) enum KiwiCommand {
     Ping,
     Command(String),
     Set { key: Types, value: Types },
+    Get { key: Types },
 }
 
 impl KiwiCommand {
@@ -17,6 +18,8 @@ impl KiwiCommand {
         match name {
             "PING" => Ok(KiwiCommand::Ping),
             "COMMAND" => Self::create_command(args),
+            "GET" => Self::create_get(args),
+            "SET" => Self::create_set(args),
             _ => Err(CommandError::UnsupportedCommand),
         }
     }
@@ -28,6 +31,27 @@ impl KiwiCommand {
             Ok(KiwiCommand::Command(key.to_string()))
         } else {
             Err(CommandError::WrongArgumentType)
+        }
+    }
+
+    fn create_get(args: Vec<Types>) -> Result<KiwiCommand, CommandError> {
+        if args.len() != 1 {
+            Err(CommandError::WrongNumberOfArguments)
+        } else {
+            Ok(KiwiCommand::Get {
+                key: args[0].clone(),
+            })
+        }
+    }
+
+    fn create_set(args: Vec<Types>) -> Result<KiwiCommand, CommandError> {
+        if args.len() != 2 {
+            Err(CommandError::WrongNumberOfArguments)
+        } else {
+            Ok(KiwiCommand::Set {
+                key: args[0].clone(),
+                value: args[1].clone(),
+            })
         }
     }
 }
