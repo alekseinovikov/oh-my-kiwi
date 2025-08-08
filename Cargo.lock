@@ -186,7 +186,19 @@ dependencies = [
 ]
 
 [[package]]
-name = "oh-my-kiwi"
+name = "oh-my-kiwi-bin"
+version = "0.1.0"
+dependencies = [
+ "oh-my-kiwi-domain",
+ "oh-my-kiwi-engine",
+ "oh-my-kiwi-parser",
+ "oh-my-kiwi-tcp",
+ "tokio",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "oh-my-kiwi-domain"
 version = "0.1.0"
 dependencies = [
  "async-trait",
@@ -195,7 +207,42 @@ dependencies = [
  "thiserror",
  "tokio",
  "tracing",
- "tracing-subscriber",
+]
+
+[[package]]
+name = "oh-my-kiwi-engine"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "oh-my-kiwi-domain",
+ "tokio",
+]
+
+[[package]]
+name = "oh-my-kiwi-parser"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "oh-my-kiwi-domain",
+]
+
+[[package]]
+name = "oh-my-kiwi-server"
+version = "0.1.0"
+dependencies = [
+ "oh-my-kiwi-domain",
+ "tracing",
+]
+
+[[package]]
+name = "oh-my-kiwi-tcp"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "oh-my-kiwi-domain",
+ "oh-my-kiwi-server",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -298,18 +345,18 @@ dependencies = [
 
 [[package]]
 name = "signal-hook-registry"
-version = "1.4.5"
+version = "1.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9203b8055f63a2a00e2f593bb0510367fe707d7ff1e5c872de2f537b339e5410"
+checksum = "b2a4719bff48cee6b39d12c020eeb490953ad2443b7055bd0b21fca26bd8c28b"
 dependencies = [
  "libc",
 ]
 
 [[package]]
 name = "slab"
-version = "0.4.10"
+version = "0.4.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "04dc19736151f35336d325007ac991178d504a119863a2fcb3758cdb5e52c50d"
+checksum = "7a2ae44ef20feb57a68b23d846850f861394c2e02dc425a50098ae8c90267589"
 
 [[package]]
 name = "smallvec"
@@ -369,9 +416,9 @@ dependencies = [
 
 [[package]]
 name = "tokio"
-version = "1.47.0"
+version = "1.47.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "43864ed400b6043a4757a25c7a64a8efde741aed79a056a2fb348a406701bb35"
+checksum = "89e49afdadebb872d3145a5638b59eb0691ea23e46ca484037cfab3b76b95038"
 dependencies = [
  "backtrace",
  "bytes",

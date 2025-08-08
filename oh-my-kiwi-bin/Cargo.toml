@@ -1,0 +1,12 @@
+[package]
+name = "oh-my-kiwi-bin"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+oh-my-kiwi-domain = { path = "../oh-my-kiwi-domain" }
+oh-my-kiwi-parser = { path = "../oh-my-kiwi-parser" }
+oh-my-kiwi-engine = { path = "../oh-my-kiwi-engine" }
+oh-my-kiwi-tcp = { path = "../oh-my-kiwi-tcp" }
+tracing-subscriber = { workspace = true }
+tokio = { workspace = true }

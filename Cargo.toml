@@ -1,10 +1,19 @@
-[package]
-name = "oh-my-kiwi"
-version = "0.1.0"
+[workspace]
+members = [
+    "oh-my-kiwi-domain",
+    "oh-my-kiwi-server",
+    "oh-my-kiwi-parser",
+    "oh-my-kiwi-engine",
+    "oh-my-kiwi-tcp",
+    "oh-my-kiwi-bin",
+]
+resolver = "3"
+
+[workspace.package]
 edition = "2024"
 
-[dependencies]
-tokio = {version = "1.47.0", features = ["full"]}
+[workspace.dependencies]
+tokio = { version = "1.47.0", features = ["full"] }
 thiserror = "2.0"
 tracing = "0.1.41"
 tracing-subscriber = "0.3.19"
