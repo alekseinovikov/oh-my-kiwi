@@ -8,10 +8,7 @@ pub mod response;
 pub mod types;
 pub mod error;
 
-#[async_trait]
-pub trait CommandParser {
-    async fn parse_next_command(&mut self) -> Result<KiwiCommand, KiwiError>;
-}
+
 
 #[async_trait]
 pub trait CommandProcessor {

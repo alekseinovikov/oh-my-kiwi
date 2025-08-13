@@ -1,7 +1,7 @@
 use oh_my_kiwi_domain::error::KiwiErrorHandler;
 use oh_my_kiwi_engine::command_processor::KiwiCommandProcessor;
 use oh_my_kiwi_engine::in_memory::InMemoryEngine;
-use oh_my_kiwi_engine::KiwiResponseWriter;
+use oh_my_kiwi_engine::response_writer::KiwiResponseWriter;
 use oh_my_kiwi_parser::KiwiCommandParser;
 use oh_my_kiwi_tcp::start_tcp_server;
 use std::sync::Arc;

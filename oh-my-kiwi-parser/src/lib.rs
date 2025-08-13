@@ -2,7 +2,8 @@ use async_trait::async_trait;
 use oh_my_kiwi_domain::command::KiwiCommand;
 use oh_my_kiwi_domain::error::{CommandError, KiwiError};
 use oh_my_kiwi_domain::types::Types;
-use oh_my_kiwi_domain::{BytesReader, CommandParser};
+use oh_my_kiwi_domain::BytesReader;
+use oh_my_kiwi_server::services::CommandParser;
 
 pub struct KiwiCommandParser<Reader: BytesReader + Send> {
     reader: Reader,

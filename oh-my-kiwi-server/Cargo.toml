@@ -4,5 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-oh-my-kiwi-domain = {path = "../oh-my-kiwi-domain"}
-tracing = {workspace = true}
+oh-my-kiwi-domain = { path = "../oh-my-kiwi-domain" }
+async-trait = { workspace = true }
+tracing = { workspace = true }

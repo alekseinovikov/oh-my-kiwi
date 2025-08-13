@@ -5,4 +5,5 @@ edition = "2024"
 
 [dependencies]
 oh-my-kiwi-domain = { path = "../oh-my-kiwi-domain" }
+oh-my-kiwi-server = { path = "../oh-my-kiwi-server" }
 async-trait = { workspace = true }

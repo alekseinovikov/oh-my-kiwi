@@ -224,12 +224,14 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "oh-my-kiwi-domain",
+ "oh-my-kiwi-server",
 ]
 
 [[package]]
 name = "oh-my-kiwi-server"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "oh-my-kiwi-domain",
  "tracing",
 ]

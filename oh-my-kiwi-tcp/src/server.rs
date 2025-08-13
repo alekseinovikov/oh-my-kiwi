@@ -1,10 +1,11 @@
-use tokio::net::TcpListener;
-use tracing::{error, info, info_span, Instrument};
-use oh_my_kiwi_domain::{CommandParser, CommandProcessor, ErrorHandler, ResponseWriter};
 use crate::config::TcpConfig;
-use crate::handler::TcpConnectionHandler;
 use crate::reader::TcpBufferedReader;
 use crate::writer::TcpBytesWriter;
+use oh_my_kiwi_domain::{CommandProcessor, ErrorHandler, ResponseWriter};
+use oh_my_kiwi_server::services::CommandParser;
+use oh_my_kiwi_server::RESP3Server;
+use tokio::net::TcpListener;
+use tracing::{info, info_span, Instrument};
 
 pub(crate) struct TcpServer<PF, CPF, RF, EHF> {
     tcp_config: TcpConfig,
@@ -60,17 +61,11 @@ impl<PF, CPF, RF, EHF> TcpServer<PF, CPF, RF, EHF> {
             let parser = (self.parser_factory)(bytes_reader);
             let response_writer = (self.response_write_factory)(bytes_writer);
             let error_handler = (self.error_handler_factory)();
+
+            let mut server = RESP3Server::new(parser, processor, response_writer, error_handler);
             tokio::spawn(
                 async move {
-                    let handler = TcpConnectionHandler::new(
-                        processor,
-                        parser,
-                        response_writer,
-                        error_handler,
-                    );
-                    if let Err(e) = handler.handle_client().await {
-                        error!("Critical error working with connection {}: {:?}", addr, e);
-                    }
+                    server.run().await;
                 }
                 .instrument(info_span),
             );
